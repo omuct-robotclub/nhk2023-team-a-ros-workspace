@@ -199,26 +199,21 @@ proc loop(self) {.async.} =
     await sleep
 
 proc run(self) {.async.} =
-  try:
-    await allFutures [
-      self.paramEventLoop(),
-      self.cmdSubLoop(),
-      self.getOverSrvLoop(),
-      self.donfanCmdSubLoop(),
-      self.expanderCmdSubLoop(),
-      self.collectorCmdSubLoop(),
-      self.armCmdSubLoop(),
-      self.loop(),
-    ]
-  except ShutdownError:
-    discard
+  await allFutures [
+    self.paramEventLoop(),
+    self.cmdSubLoop(),
+    self.getOverSrvLoop(),
+    self.donfanCmdSubLoop(),
+    self.expanderCmdSubLoop(),
+    self.collectorCmdSubLoop(),
+    self.armCmdSubLoop(),
+    self.loop(),
+  ]
+  echo "Shutting down"
 
 proc main =
   rclnim.init()
   let node = newCanBridgeNode()
-  try:
-    waitFor node.run()
-  except ShutdownError:
-    discard
+  waitFor node.run()
 
 main()
