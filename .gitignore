@@ -1,0 +1,8 @@
+/build
+/install
+/log
+.vscode
+
+/src/**/*
+!/src/**/
+!/src/**/*.*
