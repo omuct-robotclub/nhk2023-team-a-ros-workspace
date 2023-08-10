@@ -43,6 +43,11 @@
           buildInputs = [
             
           ];
+
+          shellHook = ''
+            set +u
+            unset COLCON_CURRENT_PREFIX
+          '';
         };
       }
     );
