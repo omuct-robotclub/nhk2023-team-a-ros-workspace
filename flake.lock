@@ -26,11 +26,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1689152670,
-        "narHash": "sha256-F9tI3jgCNikMCVIdGI/zYt9OlLBvFIZeTnm14bWaFuo=",
+        "lastModified": 1691637630,
+        "narHash": "sha256-6PI+WsenD3BEyLfhEI9lZVj/FNvNxc+iqyxgKCj0r2I=",
         "owner": "pylgos",
         "repo": "colcon-ros-nimble",
-        "rev": "e07b2538687f0119122ad36e0349880b1e86466e",
+        "rev": "33a75ad53540c504cbcb49e724049c69311c7fa7",
         "type": "github"
       },
       "original": {
