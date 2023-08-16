@@ -36,6 +36,7 @@
             rosPkgs.sensor_msgs
             rosPkgs.rcl_interfaces
             rosPkgs.teleop_twist_keyboard
+            rosPkgs.robot_localization
             rosPkgs.desktop
             pkgs.gdb
           ];
