@@ -369,11 +369,11 @@
         "std": "std"
       },
       "locked": {
-        "lastModified": 1679537797,
-        "narHash": "sha256-R8TLceax/YqyPdv0Awjre8ti/h4PlehHeZ5v3RfJ9Qw=",
+        "lastModified": 1692153916,
+        "narHash": "sha256-PJ49djmzMtovMOalRFvruhSZwnES0PiXZbygTlYsSq8=",
         "owner": "pylgos",
         "repo": "ros2nix",
-        "rev": "cc29e067e435919818489d1bd0bd4dba48b8b70c",
+        "rev": "b6c8c37dc4782b4bb37b5cdb1cbadc31285a9f43",
         "type": "github"
       },
       "original": {
