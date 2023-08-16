@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>bringup</name>
+  <version>0.1.0</version>
+  <description>TODO: Package description</description>
+  <maintainer email="pylgos@todo.todo">pylgos</maintainer>
+  <license>TODO: License declaration</license>
+
+  <depend>geometry_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>robot_interface</depend>
+
+  <export>
+    <build_type>ament_nimble</build_type>
+  </export>
+</package>

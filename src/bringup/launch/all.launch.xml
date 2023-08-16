@@ -1,0 +1,5 @@
+<launch>
+  <node pkg="robot_localization" exec="ekf_node">
+    <param from="$(find-pkg-share bringup)/config/ekf.yaml" />
+  </node>
+</launch>
