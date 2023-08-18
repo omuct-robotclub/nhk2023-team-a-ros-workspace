@@ -40,6 +40,8 @@ enum ParamId : uint8_t {
 
 // PCからマイコンへ送信するメッセージ
 struct Command {
+  static constexpr int ID = 200;
+
   enum class Tag : uint8_t {
     GET_PARAM,
     SET_PARAM,
@@ -115,6 +117,8 @@ struct Command {
 
 // マイコンからPCへ送信するメッセージ
 struct Feedback {
+  static constexpr int ID = 201;
+
   enum class Tag : uint8_t {
     PARAM_EVENT,
     GET_PARAM_RESPONSE,
