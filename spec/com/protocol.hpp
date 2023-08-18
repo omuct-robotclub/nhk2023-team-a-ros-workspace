@@ -1,3 +1,6 @@
+#ifndef CAN_BRIDGE_PROTOCOL_H
+#define CAN_BRIDGE_PROTOCOL_H
+
 #include <stdint.h>
 #include <array>
 
@@ -157,3 +160,5 @@ struct Feedback {
 
 static_assert(sizeof(Command) <= 8);
 static_assert(sizeof(Feedback) <= 8);
+
+#endif
