@@ -36,7 +36,6 @@ using self: CanBridgeNode
 
 proc newCanBridgeNode*(): CanBridgeNode =
   new result
-  result.can = createCANSocket("vcan0")
   result.node = newNode("can_bridge")
   result.params = result.node.createParamServer()
   result.cmdVelSub = result.node.createSubscription(Twist, "cmd_vel", SystemDefaultQoS)
@@ -48,10 +47,12 @@ proc newCanBridgeNode*(): CanBridgeNode =
   result.armCmdSub = result.node.createSubscription(ArmCommand, "arm_cmd", SystemDefaultQoS)
   result.params.declare("pid_x.kp", 0.0)
   result.params.declare("can_id", 144)
+  result.params.declare("can_interface", "can0")
   result.params.declare("command_lifespan_sec", 1.0)
   result.params.declare("linear_accel_limit", 3.0)
   result.params.declare("angular_accel_limit", 3.0)
   result.params.endDeclaration()
+  result.can = createCANSocket(result.params.get("can_interface").strVal)
 
 proc sendCmd*(self; cmd: RoboCmd, doRetry = true, interval: Duration = 10.milliseconds) {.async.} =
   let cmdData = RoboCmdData(msg: cmd)
