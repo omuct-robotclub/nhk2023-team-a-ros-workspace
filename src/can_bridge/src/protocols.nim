@@ -17,30 +17,40 @@ type
       floatVal*: float32
 
   RoboParamId* {.size: 1.} = enum
-    X_Kp
-    X_Ki
-    X_Kd
+    DRIVE_KP,
+    DRIVE_KI,
+    DRIVE_KD,
+    DRIVE_MAX,
+    DRIVE_MIN,
+    DRIVE_ANTIWINDUP,
+    DRIVE_USE_VELOCITY_FOR_D_TERM,
 
-    Y_Kp
-    Y_Ki
-    Y_Kd
+    STEER_KP,
+    STEER_KI,
+    STEER_KD,
+    STEER_MAX,
+    STEER_MIN,
+    STEER_ANTIWINDUP,
+    STEER_USE_VELOCITY_FOR_D_TERM,
 
-    Yaw_Kp
-    Yaw_Ki
-    Yaw_Kd
+    STEER0_OFFSET,
+    STEER1_OFFSET,
+    STEER2_OFFSET,
+    STEER3_OFFSET,
 
 
   # commands
   RoboCmdKind* {.size: 1.} = enum
-    GetParam
-    SetParam
-    ResetPid
-    SetTargetVelocity
-    GetOver
-    SetDonfanCmd
-    SetExpanderCmd
-    SetCollectorCmd
-    SetArmCmd
+    GET_PARAM,
+    SET_PARAM,
+    RESET_PID,
+    SET_TARGET_VELOCITY,
+    SET_DONFAN_CMD,
+    SET_EXPANDER_CMD,
+    SET_COLLECTOR_CMD,
+    SET_ARM_CMD,
+    UNWIND_STEER,
+    ACTIVATE,
 
   GetParamObj* {.packed.} = object
     id*: RoboParamId
@@ -48,19 +58,8 @@ type
   SetParamObj* {.packed.} = object
     id*: RoboParamId
     value*: RoboParamValue
-
-  ResetPidObj* {.packed.} = object
-
   SetTargetVelocityObj* {.packed.} = object
     vx*, vy*, angVel*: int16
-
-  StepKind* {.size: 1.} = enum
-    Small
-    Large
-    Center
-
-  GetOverObj* {.packed.} = object
-    stepKind*: StepKind
   
   SetDonfanCmdObj* {.packed.} = object
     cmd*: int16
@@ -78,28 +77,29 @@ type
 
   RoboCmd* {.packed.} = object
     case kind*: RoboCmdKind
-    of GetParam: getParam*: GetParamObj
-    of SetParam: setParam*: SetParamObj
-    of ResetPid: resetPid*: ResetPidObj
-    of SetTargetVelocity: setTargetVelocity*: SetTargetVelocityObj
-    of GetOver: getOver*: GetOverObj
-    of SetDonfanCmd: setDonfanCmd*: SetDonfanCmdObj
-    of SetExpanderCmd: setExpanderCmd*: SetExpanderCmdObj
-    of SetCollectorCmd: setCollectorCmd*: SetCollectorCmdObj
-    of SetArmCmd: setArmCmd*: SetArmCmdObj
+    of GET_PARAM: getParam*: GetParamObj
+    of SET_PARAM: setParam*: SetParamObj
+    of RESET_PID: discard
+    of SET_TARGET_VELOCITY: setTargetVelocity*: SetTargetVelocityObj
+    of SET_DONFAN_CMD: setDonfanCmd*: SetDonfanCmdObj
+    of SET_EXPANDER_CMD: setExpanderCmd*: SetExpanderCmdObj
+    of SET_COLLECTOR_CMD: setCollectorCmd*: SetCollectorCmdObj
+    of SET_ARM_CMD: setArmCmd*: SetArmCmdObj
+    of UNWIND_STEER: discard
+    of ACTIVATE: discard
 
   RoboCmdData* {.union.} = object
     bytes*: array[8, byte]
     msg*: RoboCmd
 
-
   # feedbacks
   RoboFeedbackKind* {.size: 1.} = enum
-    ParamEvent
-    GetParamResponse
-    Odometry
-    GetOverDone
-    Heartbeat
+    PARAM_EVENT,
+    GET_PARAM_RESPONSE,
+    ODOMETRY,
+    HEARTBEAT,
+    STEER_UNWIND_DONE,
+    CURRENT_STATE
 
   ParamEventObj* {.packed.} = object
     id*: RoboParamId
@@ -112,22 +112,21 @@ type
   OdometryObj* {.packed.} = object
     vx*, vy*, angVel*: int16
 
-  GetOverDoneObj* {.packed.} = object
+  CurrentStateEnum* {.size: 1.} = enum
+    Configuring
+    Running
 
-  HeartbeatObj* {.packed.} = object
+  CurrentStateObj* {.packed.} = object
+    state*: CurrentStateEnum
 
   RoboFeedback* {.packed.} = object
     case kind*: RoboFeedbackKind
-    of ParamEvent:
-      paramEvent*: ParamEventObj
-    of GetParamResponse:
-      getParamResponse*: GetParamResponseObj
-    of Odometry:
-      odometry*: OdometryObj
-    of GetOverDone:
-      getOverDone*: GetOverDoneObj
-    of Heartbeat:
-      heartbeat*: HeartbeatObj
+    of PARAM_EVENT: paramEvent*: ParamEventObj
+    of GET_PARAM_RESPONSE: getParamResponse*: GetParamResponseObj
+    of ODOMETRY: odometry*: OdometryObj
+    of HEARTBEAT: discard
+    of STEER_UNWIND_DONE: discard
+    of CURRENT_STATE: currentState*: CurrentStateObj
 
   RoboFeedbackData* {.union.} = object
     bytes*: array[8, byte]

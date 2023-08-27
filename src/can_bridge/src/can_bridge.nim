@@ -1,18 +1,24 @@
 import rclnim
 import rclnim/chronossupport
 import chronos
-import std/[options, strformat]
-import socketcan
+import std/[options, strformat, with, strutils, tables]
+import ./socketcan
 import vmath
 import ./protocols
 
 importInterface geometry_msgs/msg/[twist, vector3]
+importInterface nav_msgs/msg/odometry, Odometry as OdometryMsg
 importInterface std_msgs/msg/float64
 importInterface robot_interface/srv/get_over, GetOver as GetOverSrv
 importInterface robot_interface/msg/arm_command
 
 func toDurationSec(f: float): Duration =
   int(f*1e9).nanoseconds
+
+type RoboState = enum
+  Unknown
+  Configuring
+  Running
 
 type CanBridgeNode = ref object
   node: Node
@@ -24,6 +30,7 @@ type CanBridgeNode = ref object
   presentAngVel: float
   targetLinearVel: Vec2
   targetAngVel: float
+
   cmdVelSub: Subscription[Twist]
   cmdVelFilteredPub: Publisher[Twist]
   getOverSrv: Service[GetOverSrv]
@@ -32,9 +39,23 @@ type CanBridgeNode = ref object
   collectorCmdSub: Subscription[Float64]
   armCmdSub: Subscription[ArmCommand]
 
+  odomPub: Publisher[OdometryMsg]
+
+  roboParamEventQueue: AsyncQueue[ParamEventObj]
+  roboGetParamResponseQueue: AsyncQueue[GetParamResponseObj]
+  roboSteerUnwindDoneQueue: AsyncQueue[bool]
+  roboState: RoboState
+  roboStateEvent: AsyncEvent
+
+  canOpenedEvent: AsyncEvent
+  canWriteQueue: AsyncQueue[(CANFrame, Future[void])]
+
 using self: CanBridgeNode
 
-proc newCanBridgeNode*(): CanBridgeNode =
+func logger(self): Logger =
+  self.node.getLogger()
+
+proc newCanBridgeNode(): CanBridgeNode =
   new result
   result.node = newNode("can_bridge")
   result.params = result.node.createParamServer()
@@ -45,53 +66,117 @@ proc newCanBridgeNode*(): CanBridgeNode =
   result.expanderCmdSub = result.node.createSubscription(Float64, "expander_cmd", SystemDefaultQoS)
   result.collectorCmdSub = result.node.createSubscription(Float64, "collector_cmd", SystemDefaultQoS)
   result.armCmdSub = result.node.createSubscription(ArmCommand, "arm_cmd", SystemDefaultQoS)
-  result.params.declare("pid_x.kp", 0.0)
-  result.params.declare("can_id", 144)
-  result.params.declare("can_interface", "can0")
-  result.params.declare("command_lifespan_sec", 1.0)
-  result.params.declare("linear_accel_limit", 3.0)
-  result.params.declare("angular_accel_limit", 3.0)
-  result.params.endDeclaration()
-  result.can = createCANSocket(result.params.get("can_interface").strVal)
+  result.odomPub = result.node.createPublisher(OdometryMsg, "odom", SensorDataQoS)
 
-proc sendCmd*(self; cmd: RoboCmd, doRetry = true, interval: Duration = 10.milliseconds) {.async.} =
+  result.roboParamEventQueue = newAsyncQueue[ParamEventObj]()
+  result.roboGetParamResponseQueue = newAsyncQueue[GetParamResponseObj]()
+  result.roboSteerUnwindDoneQueue = newAsyncQueue[bool]()
+  result.roboState = Unknown
+  result.roboStateEvent = newAsyncEvent()
+
+  result.canOpenedEvent = newAsyncEvent()
+  result.canWriteQueue = newAsyncQueue[(CANFrame, Future[void])]()
+
+  with result.params:
+    declare("drive.kp", 1.0)
+    declare("drive.ki", 4.0)
+    declare("drive.kd", 0.0)
+    declare("drive.max", 20.0)
+    declare("drive.min", -20.0)
+    declare("drive.use_velocity_for_d_term", false)
+    declare("drive.antiwindup", true)
+
+    declare("steer.kp", 2.0)
+    declare("steer.ki", 0.8)
+    declare("steer.kd", 0.0)
+    declare("steer.max", 0.9)
+    declare("steer.min", -0.9)
+    declare("steer.use_velocity_for_d_term", true)
+    declare("steer.antiwindup", false)
+
+    declare("steer0.offset", 0.0)
+    declare("steer1.offset", 0.0)
+    declare("steer2.offset", 0.0)
+    declare("steer3.offset", 0.0)
+
+    declare("can_id", 200)
+    declare("can_interface", "can0")
+    declare("command_lifespan_sec", 1.0)
+    declare("linear_accel_limit", 10.0)
+    declare("angular_accel_limit", 10.0)
+
+    endDeclaration()
+
+proc sendCmd*(self; cmd: RoboCmd): Future[void] =
   let cmdData = RoboCmdData(msg: cmd)
   let frame = CANFrame(
     id: self.params.get("can_id").intVal.CANId,
     kind: Data, format: Standard, len: 8, data: cmdData.bytes
   )
-  if doRetry:
-    while not self.can.write(frame):
-      self.node.getLogger.warn fmt"failed to send command. retrying after {interval}"
-      await sleepAsync interval
-  else:
-    discard self.can.write(frame)
+  result = newFuture[void]("sendCmd")
+  self.canWriteQueue.putNoWait((frame, result))
+  # await self.can.write(frame)
+
+proc sendParameter(self; p: SetParamObj) {.async.} =
+  let cmd = RoboCmd(
+    kind: SetParam,
+    setParam: p
+  )
+  self.roboParamEventQueue.clear()
+  while true:
+    echo cmd
+    await self.sendCmd(cmd)
+    let fut = self.roboParamEventQueue.get()
+    if await withTimeout(fut, 100.milliseconds):
+      let ev = fut.read()
+      if ev.id == p.id:
+        break
+      else:
+        self.logger.warn "failed to sync parameter ", p.id
+
+proc syncParameter(self; name: string, value: ParamValue) {.async.} =
+  # TODO: refactor this shit
+  let pidParamOffsetLut = {
+    "kp": 0, "ki": 1, "kd": 2,
+    "max": 3, "min": 4, "antiwindup": 5, "use_velocity_for_d_term": 6}.toTable
+  let s = name.split(".")
+  if s.len < 1: return
+  if name.startsWith("drive.") or name.startsWith("steer."):
+    if s.len != 2: return
+    if s[1] notin pidParamOffsetLut: return
+    var paramId =
+      if s[0] == "drive": DRIVE_KP
+      else: STEER_KP
+    inc paramId, pidParamOffsetLut[s[1]]
+    var paramValue: RoboParamValue
+    if s[1] == "antiwindup" or s[1] == "use_velocity_for_d_term":
+      if value.kind != Bool: return
+      paramValue = RoboParamValue(kind: Int, intVal: ord(value.boolVal).int32)
+    else:
+      paramValue = RoboParamValue(kind: Float, floatVal: value.doubleVal)
+    await self.sendParameter(SetParamObj(
+      id: paramId,
+      value: paramValue))
+  elif s[0] in ["steer0", "steer1", "steer2", "steer3"]:
+    if s.len != 2: return
+    let paramId = case s[0]
+      of "steer0": STEER0_OFFSET
+      of "steer1": STEER1_OFFSET
+      of "steer2": STEER2_OFFSET
+      of "steer3": STEER3_OFFSET
+      else: return
+    if s[1] != "offset": return
+    if value.kind != Double: return
+    await self.sendParameter(SetParamObj(
+      id: paramId,
+      value: RoboParamValue(kind: Float, floatVal: value.doubleVal)))
 
 proc paramEventLoop(self) {.async.} =
   while true:
     for ev in await self.params.waitForUpdate():
       if ev.kind != Changed: continue
-      let paramId =
-        case ev.name
-        of "pid_x.kp": some X_Kp
-        of "pid_x.ki": some X_Ki
-        of "pid_x.kd": some X_Kd
-        of "pid_y.kp": some Y_Kp
-        of "pid_y.ki": some Y_Ki
-        of "pid_y.kd": some Y_Kd
-        of "pid_yaw.kp": some Yaw_Kp
-        of "pid_yaw.ki": some Yaw_Ki
-        of "pid_yaw.kd": some Yaw_Kd
-        else: none(RoboParamId)
-      if paramId.isSome:
-        let cmd = RoboCmd(
-          kind: SetParam,
-          setParam: SetParamObj(
-            id: paramId.get,
-            value: RoboParamValue(kind: Float, floatVal: ev.param.doubleVal)
-          )
-        )
-        await self.sendCmd(cmd)
+      echo ev
+      await self.syncParameter(ev.name, ev.param)
 
 proc cmdSubLoop(self) {.async.} =
   while true:
@@ -104,11 +189,11 @@ proc cmdSubLoop(self) {.async.} =
 proc getOverSrvLoop(self) {.async.} =
   while true:
     let (req, sender) = await self.getOverSrv.recv()
-    await self.sendCmd(RoboCmd(
-      kind: GetOver,
-      getOver: GetOverObj(
-        stepKind: req.stepKind.StepKind
-    )))
+    # await self.sendCmd(RoboCmd(
+    #   kind: GetOver,
+    #   getOver: GetOverObj(
+    #     stepKind: req.stepKind.StepKind
+    # )))
     sender.send(GetOverResponse())
 
 proc donfanCmdSubLoop(self) {.async.} =
@@ -135,9 +220,76 @@ proc armCmdSubLoop(self) {.async.} =
         tiltCmd: int16(cmd.tiltCommand * int16.high.float64),
       )))
 
+proc openCan(self) {.async.} =
+  while self.can == nil or not self.can.isOpened:
+    let name = self.params.get("can_interface").strVal
+    try:
+      self.can = createCANSocket(name)
+      self.canOpenedEvent.fire()
+      self.logger.info fmt"can interface '{name}' opened"
+      return
+    except CatchableError:
+      self.logger.warn fmt"failed to open '{name}'"
+      if self.node.context.isShuttingDown:
+        raise newException(ShutdownError, "shutting down")
+      await sleepAsync 1.seconds
+
+proc canReadLoop(self) {.async.} =
+  while true:
+    var frame: CANFrame
+    while true:
+      await self.canOpenedEvent.wait()
+      try:
+        frame = await self.can.read()
+        break
+      except OSError:
+        self.can.close()
+        self.canOpenedEvent.clear()
+        await self.openCan()
+
+    if frame.id != (self.params.get("can_id").intVal + 1).CANId: continue
+    if frame.kind != Data or frame.format != Standard or frame.len != 8: continue
+    var fb = RoboFeedback()
+    copyMem(addr fb, addr frame.data, sizeof(fb))
+    echo fb
+    case fb.kind
+    of PARAM_EVENT: await self.roboParamEventQueue.put(fb.paramEvent)
+    of GET_PARAM_RESPONSE: await self.roboGetParamResponseQueue.put(fb.getParamResponse)
+    of ODOMETRY:
+      var msg = OdometryMsg()
+      msg.twist.twist.linear.x = float(fb.odometry.vx) * 1e-3
+      msg.twist.twist.linear.y = float(fb.odometry.vy) * 1e-3
+      msg.twist.twist.angular.z = float(fb.odometry.angVel) * 1e-3
+      self.odomPub.publish(msg)
+    of HEARTBEAT: discard
+    of STEER_UNWIND_DONE: await self.roboSteerUnwindDoneQueue.put(true)
+    of CURRENT_STATE:
+      case fb.currentState.state
+      of Configuring:
+        self.roboState = Configuring
+        self.roboStateEvent.fire()
+      of Running:
+        if self.roboState != Running:
+          self.roboState = Running
+          self.roboStateEvent.fire()
+
+proc canWriteLoop(self) {.async.} =
+  while true:
+    let (frame, fut) = await self.canWriteQueue.get()
+    while true:
+      await self.canOpenedEvent.wait()
+      try:
+        await self.can.write(frame)
+        fut.complete()
+        break
+      except OSError:
+        self.can.close()
+        self.canOpenedEvent.clear()
+        await self.openCan()
+
 proc updateVelocity(self; dt: Duration) =
   let dtSec = dt.nanoseconds.float * 1e-9
-  
+
   block:
     let
       tgt = self.targetLinearVel
@@ -148,7 +300,7 @@ proc updateVelocity(self; dt: Duration) =
       self.presentLinearVel += dir * lim
     else:
       self.presentLinearVel = tgt
-  
+
   block:
     let
       tgt = self.targetAngVel
@@ -164,27 +316,18 @@ proc updateVelocity(self; dt: Duration) =
       linear: Vector3(x: self.presentLinearVel.x, y: self.presentLinearVel.y),
       angular: Vector3(z: self.presentAngVel)))
 
-proc writeVelocity(self) =
-  var frame = CANFrame(
-    id: self.params.get("can_id").intVal.CANId,
-    kind: Data,
-    format: Standard,
-  )
-  let cmd = RoboCmdData(
-    msg: RoboCmd(
-      kind: SetTargetVelocity,
-      setTargetVelocity: SetTargetVelocityObj(
-        vx: int16 self.presentLinearVel.x * 1000,
-        vy: int16 self.presentLinearVel.y * 1000,
-        angVel: int16 self.presentAngVel * 1000,
-      )
+proc writeVelocity(self) {.async.} =
+  let cmd = RoboCmd(
+    kind: SetTargetVelocity,
+    setTargetVelocity: SetTargetVelocityObj(
+      vx: int16 self.presentLinearVel.x * 1000,
+      vy: int16 self.presentLinearVel.y * 1000,
+      angVel: int16 self.presentAngVel * 1000,
     )
   )
-  frame.len = 8
-  frame.data = cmd.bytes
-  discard self.can.write(frame)
+  await self.sendCmd(cmd)
 
-proc loop(self) {.async.} =
+proc velCmdLoop(self) {.async.} =
   var prevLoopRun = Moment.now() - 10.milliseconds
   while true:
     let sleep = sleepAsync(10.milliseconds)
@@ -196,11 +339,55 @@ proc loop(self) {.async.} =
       self.targetLinearVel = Vec2.zeroDefault
       self.targetAngVel = 0.0
     self.updateVelocity(dt)
-    self.writeVelocity()
+    await self.writeVelocity()
     await sleep
 
+proc roboSetupLoop(self) {.async.} =
+  while true:
+    await self.roboStateEvent.wait()
+    self.roboStateEvent.clear()
+    case self.roboState
+    of Configuring:
+      const params = [
+        "drive.kp",
+        "drive.ki",
+        "drive.kd",
+        "drive.max",
+        "drive.min",
+        "drive.antiwindup",
+        "drive.use_velocity_for_d_term",
+        "steer.kp",
+        "steer.ki",
+        "steer.kd",
+        "steer.max",
+        "steer.min",
+        "steer.antiwindup",
+        "steer.use_velocity_for_d_term",
+      ]
+      for toSync in params:
+        echo toSync
+        await self.syncParameter(toSync, self.params.get(toSync))
+      await self.sendCmd(RoboCmd(kind: ACTIVATE))
+    of Running:
+      discard
+    of Unknown:
+      discard
+
+proc shutdownChecker(self) {.async.} =
+  while true:
+    if not self.node.context.isValid:
+      raise newException(ShutdownError, "shutdown")
+    else:
+      await sleepAsync 100.milliseconds
+
 proc run(self) {.async.} =
-  await allFutures [
+  try:
+    await self.openCan()
+  except ShutdownError:
+    echo "Shutting down"
+    return
+
+  let tasks = [
     self.paramEventLoop(),
     self.cmdSubLoop(),
     self.getOverSrvLoop(),
@@ -208,9 +395,18 @@ proc run(self) {.async.} =
     self.expanderCmdSubLoop(),
     self.collectorCmdSubLoop(),
     self.armCmdSubLoop(),
-    self.loop(),
+    self.velCmdLoop(),
+    self.roboSetupLoop(),
+    self.canReadLoop(),
+    self.canWriteLoop(),
+    self.shutdownChecker(),
   ]
+
+  discard await one tasks
+
   echo "Shutting down"
+  for task in tasks:
+    task.cancel()
 
 proc main =
   rclnim.init()

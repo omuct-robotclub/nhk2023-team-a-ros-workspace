@@ -38,6 +38,8 @@
             rosPkgs.teleop_twist_keyboard
             rosPkgs.robot_localization
             rosPkgs.desktop
+            rosPkgs.rosbridge_server
+            rosPkgs.foxglove_bridge
             pkgs.gdb
           ];
 

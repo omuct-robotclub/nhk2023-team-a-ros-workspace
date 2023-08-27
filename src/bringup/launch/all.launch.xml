@@ -1,5 +1,13 @@
 <launch>
-  <node pkg="robot_localization" exec="ekf_node">
+  <!-- <node pkg="robot_localization" exec="ukf_node">
     <param from="$(find-pkg-share bringup)/config/ekf.yaml" />
+  </node> -->
+  
+  <node pkg="can_bridge" exec="can_bridge">
+    <param from="$(find-pkg-share bringup)/config/can_bridge.yaml" />
   </node>
+
+  <node pkg="udp_multicast_beacon" exec="beacon"/>
+
+  <node pkg="rosbridge_server" exec="rosbridge_websocket" />
 </launch>

@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <array>
 
-#define PACKED __attribute__((packed))
+#define PROTOCOL_PACKED __attribute__((packed))
 
 enum ParamType : uint8_t {
   INT,
@@ -18,23 +18,33 @@ struct ParamValue {
     int32_t int_value;
     uint32_t uint_value;
     float float_value;
-  } PACKED;
-} PACKED;
+  } PROTOCOL_PACKED;
+} PROTOCOL_PACKED;
 
 // パラメータ
 enum ParamId : uint8_t {
   // 速度制御のPIDゲイン
-  KP_X, // float
-  KI_X, // float
-  KD_X, // float
+  DRIVE_KP,
+  DRIVE_KI,
+  DRIVE_KD,
+  DRIVE_MAX,
+  DRIVE_MIN,
+  DRIVE_ANTIWINDUP,
+  DRIVE_USE_VELOCITY_FOR_D_TERM,
 
-  KP_Y, // float
-  KI_Y, // float
-  KD_Y, // float
+  // ステア角制御のPIDゲイン
+  STEER_KP,
+  STEER_KI,
+  STEER_KD,
+  STEER_MAX,
+  STEER_MIN,
+  STEER_ANTIWINDUP,
+  STEER_USE_VELOCITY_FOR_D_TERM,
 
-  KP_YAW, // float
-  KI_YAW, // float
-  KD_YAW, // float
+  STEER0_OFFSET,
+  STEER1_OFFSET,
+  STEER2_OFFSET,
+  STEER3_OFFSET,
 };
 
 
@@ -47,72 +57,72 @@ struct Command {
     SET_PARAM,
     RESET_PID,
     SET_TARGET_VELOCITY,
-    GET_OVER,
     SET_DONFAN_CMD,
     SET_EXPANDER_CMD,
     SET_COLLECTOR_CMD,
     SET_ARM_CMD,
+    UNWIND_STEER,
+    ACTIVATE,
   };
 
   Tag tag;
 
+  struct GetParam {
+      ParamId id;
+  } PROTOCOL_PACKED;
+
+  struct SetParam {
+    ParamId id;
+    ParamValue value;
+  } PROTOCOL_PACKED;
+  struct SetTargetVelocity {
+    int16_t vx; // 前方向の速度 [mm/s]
+    int16_t vy; // 左方向の速度 [mm/s]
+    int16_t ang_vel; // 上から見て半時計回り方向の角速度 [mrad/s] (ミリラジアン毎秒)
+  } PROTOCOL_PACKED;
+
+  struct SetDonfanCmd {
+    int16_t cmd; // +展開 -曲がる
+  } PROTOCOL_PACKED;
+
+  struct SetExpanderCmd {
+    int16_t cmd; // +展開
+  } PROTOCOL_PACKED;
+
+  struct SetCollectorCmd {
+    int16_t cmd; // +回収
+  } PROTOCOL_PACKED;
+
+  struct SetArmCmd {
+    uint8_t index; // 操作する機構の番号
+    int16_t expander_cmd; // +展開 -縮小
+    int16_t tilt_cmd; // +正転 -逆転
+  } PROTOCOL_PACKED;
+
   union {
     // パラメータを取得する。
-    struct GetParam {
-      ParamId id;
-    } PACKED get_param;
+    GetParam get_param;
 
     // パラメータを設定する。
     // 設定するパラメータがPIDのゲインの場合は、ResetPidが送られるまで適用しない。
-    struct SetParam {
-      ParamId id;
-      ParamValue value;
-    } PACKED set_param;
-
-    // PIDの積分項をリセットし、PIDのゲインを適用する。
-    struct ResetPid {
-    } PACKED reset_pid;
+    SetParam set_param;
 
     // 目標速度を設定する
-    struct SetTargetVelocity {
-      int16_t vx; // 前方向の速度 [mm/s]
-      int16_t vy; // 左方向の速度 [mm/s]
-      int16_t ang_vel; // 上から見て半時計回り方向の角速度 [mrad/s] (ミリラジアン毎秒)
-    } PACKED set_target_velocity;
-
-    // 段差の乗り越えを開始する
-    struct GetOver {
-      // 乗り越える段差の種類
-      enum StepKind : uint8_t {
-        SMALL, // 地区大会
-        LARGE, // 全国大会
-        CENTER, // 中央の段差
-      } step_kind;
-    } PACKED get_over;
+    SetTargetVelocity set_target_velocity;
 
     // ドンファン
-    struct SetDonfanCmd {
-      int16_t cmd; // +展開 -曲がる
-    } PACKED set_donfan_cmd;
+    SetDonfanCmd set_donfan_cmd;
 
     // ロジャー
-    struct SetExpanderCmd {
-      int16_t cmd; // +展開
-    } PACKED set_expander_cmd;
+    SetExpanderCmd set_expander_cmd;
 
     // ペチペチくん
-    struct SetCollectorCmd {
-      int16_t cmd; // +回収
-    } PACKED set_collector_cmd;
+    SetCollectorCmd set_collector_cmd;
 
     // お助けロジャー
-    struct SetArmCmd {
-      uint8_t index; // 操作する機構の番号
-      int16_t expander_cmd; // +展開 -縮小
-      int16_t tilt_cmd; // +正転 -逆転
-    } PACKED set_arm_cmd;
+    SetArmCmd set_arm_cmd;
   };
-} PACKED;
+} PROTOCOL_PACKED;
 
 
 // マイコンからPCへ送信するメッセージ
@@ -123,44 +133,50 @@ struct Feedback {
     PARAM_EVENT,
     GET_PARAM_RESPONSE,
     ODOMETRY,
-    GET_OVER_DONE,
     HEARTBEAT,
+    STEER_UNWIND_DONE,
+    CURRENT_STATE,
   };
 
   Tag tag;
 
+  struct ParamEvent {
+    ParamId id;
+    ParamValue value;
+  } PROTOCOL_PACKED;
+
+  struct GetParamResponse {
+    ParamId id;
+    ParamValue value;
+  } PROTOCOL_PACKED;
+
+  struct Odometry {
+    int16_t vx; // 前方向の速度 [mm/s]
+    int16_t vy; // 左方向の速度 [mm/s]
+    int16_t ang_vel; // 上から見て半時計回り方向の角速度 [mrad/s] (ミリラジアン毎秒)
+  } PROTOCOL_PACKED;
+
+  struct CurrentState {
+    enum State {
+      CONFIGURING,
+      RUNNING,
+    } state;
+  } PROTOCOL_PACKED;
+
   union {
     // パラメータのイベント
     // パラメータが設定されたときに送る
-    struct ParamEvent {
-      ParamId id;
-      ParamValue value;
-    } PACKED param_event;
+    ParamEvent param_event;
 
     // `get_param`に対する返信
-    struct GetParamResponse {
-      ParamId id;
-      ParamValue value;
-    } PACKED get_param_response;
+    GetParamResponse get_param_response;
 
     // オドメトリの情報
-    struct Odometry {
-      int16_t vx; // 前方向の速度 [mm/s]
-      int16_t vy; // 左方向の速度 [mm/s]
-      int16_t ang_vel; // 上から見て半時計回り方向の角速度 [mrad/s] (ミリラジアン毎秒)
-    } PACKED odometry;
-    
-    // 段差の乗り越え終了時に送る
-    struct GetOverDone {
-    } PACKED get_over_done;
+    Odometry odometry;
 
-    // 通信が生きていることを確認するために、定期的に送信するメッセージ
-    // １秒間隔で送る
-    // このメッセージを２秒以上受信できなかったとき、通信が死んだと判断する
-    struct Heartbeat {
-    } PACKED heartbeat;
+    CurrentState current_state;
   };
-} PACKED;
+} PROTOCOL_PACKED;
 
 static_assert(sizeof(Command) <= 8);
 static_assert(sizeof(Feedback) <= 8);
