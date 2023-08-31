@@ -40,6 +40,14 @@
             rosPkgs.desktop
             rosPkgs.rosbridge_server
             rosPkgs.foxglove_bridge
+            rosPkgs.pcl_ros
+            rosPkgs.tinyxml2_vendor
+            rosPkgs.xacro
+            rosPkgs.nav2_map_server
+            rosPkgs.nav2_lifecycle_manager
+            rosPkgs.backward_ros
+            rosPkgs.urg_node
+            pkgs.flann
             pkgs.gdb
           ];
 

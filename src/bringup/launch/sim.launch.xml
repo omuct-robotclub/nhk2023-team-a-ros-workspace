@@ -1,0 +1,5 @@
+<launch>
+  <include file="$(find-pkg-share bringup)/launch/all.launch.xml">
+    <arg name="simulation" value="true" />
+  </include>
+</launch>
