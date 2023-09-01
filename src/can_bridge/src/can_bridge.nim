@@ -9,7 +9,7 @@ import ./protocols
 importInterface geometry_msgs/msg/[twist, vector3]
 importInterface nav_msgs/msg/odometry, Odometry as OdometryMsg
 importInterface std_msgs/msg/float64
-importInterface robot_interface/srv/get_over, GetOver as GetOverSrv
+importInterface robot_interface/srv/[get_over, unwind], get_over.GetOver as GetOverSrv, unwind.Unwind as UnwindSrv
 importInterface robot_interface/msg/arm_command
 
 func toDurationSec(f: float): Duration =
@@ -34,6 +34,7 @@ type CanBridgeNode = ref object
   cmdVelSub: Subscription[Twist]
   cmdVelFilteredPub: Publisher[Twist]
   getOverSrv: Service[GetOverSrv]
+  unwindSrv: Service[UnwindSrv]
   donfanCmdSub: Subscription[Float64]
   expanderCmdSub: Subscription[Float64]
   collectorCmdSub: Subscription[Float64]
@@ -62,6 +63,7 @@ proc newCanBridgeNode(): CanBridgeNode =
   result.cmdVelSub = result.node.createSubscription(Twist, "cmd_vel", SystemDefaultQoS)
   result.cmdVelFilteredPub = result.node.createPublisher(Twist, "cmd_vel_filtered", SystemDefaultQoS)
   result.getOverSrv = result.node.createService(GetOverSrv, "get_over", SystemDefaultQoS)
+  result.unwindSrv = result.node.createService(UnwindSrv, "unwind", ServiceDefaultQoS)
   result.donfanCmdSub = result.node.createSubscription(Float64, "donfan_cmd", SystemDefaultQoS)
   result.expanderCmdSub = result.node.createSubscription(Float64, "expander_cmd", SystemDefaultQoS)
   result.collectorCmdSub = result.node.createSubscription(Float64, "collector_cmd", SystemDefaultQoS)
@@ -141,6 +143,7 @@ proc syncParameter(self; name: string, value: ParamValue) {.async.} =
     "max": 3, "min": 4, "antiwindup": 5, "use_velocity_for_d_term": 6}.toTable
   let s = name.split(".")
   if s.len < 1: return
+  self.logger.info "sending parameter ", name
   if name.startsWith("drive.") or name.startsWith("steer."):
     if s.len != 2: return
     if s[1] notin pidParamOffsetLut: return
@@ -157,6 +160,7 @@ proc syncParameter(self; name: string, value: ParamValue) {.async.} =
     await self.sendParameter(SetParamObj(
       id: paramId,
       value: paramValue))
+    await self.sendCmd(RoboCmd(kind: RESET_PID))
   elif s[0] in ["steer0", "steer1", "steer2", "steer3"]:
     if s.len != 2: return
     let paramId = case s[0]
@@ -195,6 +199,20 @@ proc getOverSrvLoop(self) {.async.} =
     #     stepKind: req.stepKind.StepKind
     # )))
     sender.send(GetOverResponse())
+
+proc unwindSrvLoop(self) {.async.} =
+  while true:
+    echo "recv"
+    let (_, sender) = await self.unwindSrv.recv()
+    echo "received"
+    self.logger.info "unwinding"
+    await self.sendCmd(RoboCmd(kind: UNWIND_STEER))
+    sender.send(UnwindResponse(success: true))
+
+    # let success = await self.roboSteerUnwindDoneQueue.get()
+    # echo "waiting queue"
+    # echo "got"
+    # self.logger.info "unwinding done"
 
 proc donfanCmdSubLoop(self) {.async.} =
   while true:
@@ -264,6 +282,7 @@ proc canReadLoop(self) {.async.} =
     of HEARTBEAT: discard
     of STEER_UNWIND_DONE: await self.roboSteerUnwindDoneQueue.put(true)
     of CURRENT_STATE:
+      # self.logger.info fb.currentState.state
       case fb.currentState.state
       of Configuring:
         self.roboState = Configuring
@@ -348,6 +367,7 @@ proc roboSetupLoop(self) {.async.} =
     self.roboStateEvent.clear()
     case self.roboState
     of Configuring:
+      self.logger.info "setting up"
       const params = [
         "drive.kp",
         "drive.ki",
@@ -368,6 +388,8 @@ proc roboSetupLoop(self) {.async.} =
         echo toSync
         await self.syncParameter(toSync, self.params.get(toSync))
       await self.sendCmd(RoboCmd(kind: ACTIVATE))
+      await self.roboStateEvent.wait()
+      self.roboStateEvent.clear()
     of Running:
       discard
     of Unknown:
@@ -391,6 +413,7 @@ proc run(self) {.async.} =
     self.paramEventLoop(),
     self.cmdSubLoop(),
     self.getOverSrvLoop(),
+    self.unwindSrvLoop(),
     self.donfanCmdSubLoop(),
     self.expanderCmdSubLoop(),
     self.collectorCmdSubLoop(),
