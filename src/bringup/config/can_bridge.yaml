@@ -1,3 +1,35 @@
 can_bridge:
   ros__parameters:
-    steer0.offset: 0.0
+    can_interface: can0
+    can_id: 200
+    command_lifespan_sec: 1.0
+    
+    angular_accel_limit: 10.0
+    linear_accel_limit: 10.0
+    
+    drive:
+      kp: 1.0
+      ki: 4.0
+      kd: 0.0
+      max: 20.0
+      min: -20.0
+      antiwindup: true
+      use_velocity_for_d_term: false
+    
+    steer:
+      kp: 1.0
+      ki: 0.0
+      kd: 0.0
+      max: 0.9
+      min: -0.9
+      antiwindup: true
+      use_velocity_for_d_term: true
+    
+    steer0:
+      offset: 0.0
+    steer1:
+      offset: 0.0
+    steer2:
+      offset: 0.0
+    steer3:
+      offset: 0.0

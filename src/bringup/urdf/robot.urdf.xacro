@@ -47,21 +47,21 @@
   </joint>
 
   <joint name="lidar0_joint" type="fixed">
-    <origin xyz="0.271705 0.360295 0.0" rpy="0.0 0.0 0.0" />
+    <origin xyz="0.271705 0.38160499999999997 0.0" rpy="${radians(180)} 0.0 ${radians(93)}" />
     <parent link="base_link" />
     <child link="lidar0_link" />
     <axis xyz="0.0 0.0 0.0" />
   </joint>
 
   <joint name="lidar1_joint" type="fixed">
-    <origin xyz="0.271705 0.271705 0.0" rpy="0.0 0.0 0.0" />
+    <origin xyz="0.271705 0.271705 0.0" rpy="${radians(180)} 0.0 ${radians(180)}" />
     <parent link="base_link" />
     <child link="lidar1_link" />
     <axis xyz="0.0 0.0 0.0" />
   </joint>
 
   <joint name="lidar2_joint" type="fixed">
-    <origin xyz="-0.271705 -0.271705 0.0" rpy="0.0 0.0 0.0" />
+    <origin xyz="-0.271705 -0.271705 0.0" rpy="${radians(180)} 0.0 ${radians(-90)}" />
     <parent link="base_link" />
     <child link="lidar2_link" />
     <axis xyz="0.0 0.0 0.0" />

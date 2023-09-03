@@ -56,13 +56,13 @@
   </node>
 
   <node unless="$(var simulation)" pkg="ldlidar" exec="ldlidar" name="lidar1_node">
-    <param name="serial_port_candidates" value="[]" />
+    <param name="serial_port_candidates" value="[/dev/serial/by-path/pci-0000:00:14.0-usb-0:2.1:1.0-port0]" />
     <param name="lidar_frame" value="lidar1_link" />
-    <remap from="scan" to="scan0" />
+    <remap from="scan" to="scan1" />
   </node>
 
   <node unless="$(var simulation)" pkg="ldlidar" exec="ldlidar" name="lidar2_node">
-    <param name="serial_port_candidates" value="[]" />
+    <param name="serial_port_candidates" value="[/dev/serial/by-path/pci-0000:00:14.0-usb-0:2.2:1.0-port0]" />
     <param name="lidar_frame" value="lidar2_link" />
     <remap from="scan" to="scan2" />
   </node>
