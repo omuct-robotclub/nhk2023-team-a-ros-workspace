@@ -48,8 +48,10 @@ type
     SET_DONFAN_CMD,
     SET_EXPANDER_CMD,
     SET_COLLECTOR_CMD,
-    SET_ARM_CMD,
+    SET_ARM_ANGLE,
+    SET_ARM_LENGTH,
     UNWIND_STEER,
+    SET_LARGE_WHEEL_CMD,
     ACTIVATE,
 
   GetParamObj* {.packed.} = object
@@ -62,7 +64,7 @@ type
     vx*, vy*, angVel*: int16
   
   SetDonfanCmdObj* {.packed.} = object
-    cmd*: int16
+    dir*: int8
   
   SetExpanderCmdObj* {.packed.} = object
     cmd*: int16
@@ -70,10 +72,14 @@ type
   SetCollectorCmdObj* {.packed.} = object
     cmd*: int16
   
-  SetArmCmdObj* {.packed.} = object
-    index*: uint8
-    expanderCmd*: int16
-    tiltCmd*: int16
+  SetArmAngleObj* {.packed.} = object
+    angle*: int16
+  
+  SetArmLengthObj* {.packed.} = object
+    length*: int16
+  
+  SetLargeWheelCmdObj* {.packed.} = object
+    cmd*: int16
 
   RoboCmd* {.packed.} = object
     case kind*: RoboCmdKind
@@ -84,7 +90,9 @@ type
     of SET_DONFAN_CMD: setDonfanCmd*: SetDonfanCmdObj
     of SET_EXPANDER_CMD: setExpanderCmd*: SetExpanderCmdObj
     of SET_COLLECTOR_CMD: setCollectorCmd*: SetCollectorCmdObj
-    of SET_ARM_CMD: setArmCmd*: SetArmCmdObj
+    of SET_ARM_ANGLE: setArmAngle*: SetArmAngleObj
+    of SET_ARM_LENGTH: setArmLength*: SetArmLengthObj
+    of SET_LARGE_WHEEL_CMD: setLargeWheelCmd*: SetLargeWheelCmdObj
     of UNWIND_STEER: discard
     of ACTIVATE: discard
 

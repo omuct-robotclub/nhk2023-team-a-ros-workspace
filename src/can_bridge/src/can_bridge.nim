@@ -8,7 +8,7 @@ import ./protocols
 
 importInterface geometry_msgs/msg/[twist, vector3]
 importInterface nav_msgs/msg/odometry, Odometry as OdometryMsg
-importInterface std_msgs/msg/float64
+importInterface std_msgs/msg/[int8, float64]
 importInterface robot_interface/srv/[get_over, unwind], get_over.GetOver as GetOverSrv, unwind.Unwind as UnwindSrv
 importInterface robot_interface/msg/arm_command
 
@@ -35,10 +35,11 @@ type CanBridgeNode = ref object
   cmdVelFilteredPub: Publisher[Twist]
   getOverSrv: Service[GetOverSrv]
   unwindSrv: Service[UnwindSrv]
-  donfanCmdSub: Subscription[Float64]
+  donfanCmdSub: Subscription[Int8]
   expanderCmdSub: Subscription[Float64]
   collectorCmdSub: Subscription[Float64]
   armCmdSub: Subscription[ArmCommand]
+  largeWheelCmdSub: Subscription[Float64]
 
   odomPub: Publisher[OdometryMsg]
 
@@ -61,13 +62,14 @@ proc newCanBridgeNode(): CanBridgeNode =
   result.node = newNode("can_bridge")
   result.params = result.node.createParamServer()
   result.cmdVelSub = result.node.createSubscription(Twist, "cmd_vel", SystemDefaultQoS)
-  result.cmdVelFilteredPub = result.node.createPublisher(Twist, "cmd_vel_filtered", SystemDefaultQoS)
+  result.cmdVelFilteredPub = result.node.createPublisher(Twist, "cmd_vel_filtered", SensorDataQoS)
   result.getOverSrv = result.node.createService(GetOverSrv, "get_over", SystemDefaultQoS)
   result.unwindSrv = result.node.createService(UnwindSrv, "unwind", ServiceDefaultQoS)
-  result.donfanCmdSub = result.node.createSubscription(Float64, "donfan_cmd", SystemDefaultQoS)
+  result.donfanCmdSub = result.node.createSubscription(Int8, "donfan_cmd", SystemDefaultQoS)
   result.expanderCmdSub = result.node.createSubscription(Float64, "expander_cmd", SystemDefaultQoS)
   result.collectorCmdSub = result.node.createSubscription(Float64, "collector_cmd", SystemDefaultQoS)
   result.armCmdSub = result.node.createSubscription(ArmCommand, "arm_cmd", SystemDefaultQoS)
+  result.largeWheelCmdSub = result.node.createSubscription(Float64, "large_wheel_cmd", SystemDefaultQoS)
   result.odomPub = result.node.createPublisher(OdometryMsg, "odom", SensorDataQoS)
 
   result.roboParamEventQueue = newAsyncQueue[ParamEventObj]()
@@ -190,21 +192,14 @@ proc cmdSubLoop(self) {.async.} =
     self.targetLinearVel.y = cmd.linear.y
     self.targetAngVel = cmd.angular.z
 
-proc getOverSrvLoop(self) {.async.} =
+proc largeWheelCmdSubLoop(self) {.async.} =
   while true:
-    let (req, sender) = await self.getOverSrv.recv()
-    # await self.sendCmd(RoboCmd(
-    #   kind: GetOver,
-    #   getOver: GetOverObj(
-    #     stepKind: req.stepKind.StepKind
-    # )))
-    sender.send(GetOverResponse())
+    let cmd = await self.largeWheelCmdSub.recv()
+    await self.sendCmd(RoboCmd(kind: SetLargeWheelCmd, setLargeWheelCmd: SetLargeWheelCmdObj(cmd: int16(cmd.data * int16.high.float64))))
 
 proc unwindSrvLoop(self) {.async.} =
   while true:
-    echo "recv"
     let (_, sender) = await self.unwindSrv.recv()
-    echo "received"
     self.logger.info "unwinding"
     await self.sendCmd(RoboCmd(kind: UNWIND_STEER))
     sender.send(UnwindResponse(success: true))
@@ -217,7 +212,10 @@ proc unwindSrvLoop(self) {.async.} =
 proc donfanCmdSubLoop(self) {.async.} =
   while true:
     let cmd = await self.donfanCmdSub.recv()
-    await self.sendCmd(RoboCmd(kind: SetDonfanCmd, setDonfanCmd: SetDonfanCmdObj(cmd: int16(cmd.data * int16.high.float64))))
+    if cmd.data notin [-1, 0, 1]:
+      self.logger.warn "invalid command"
+      continue
+    await self.sendCmd(RoboCmd(kind: SetDonfanCmd, setDonfanCmd: SetDonfanCmdObj(dir: cmd.data)))
 
 proc expanderCmdSubLoop(self) {.async.} =
   while true:
@@ -233,24 +231,24 @@ proc armCmdSubLoop(self) {.async.} =
   while true:
     let cmd = await self.armCmdSub.recv()
     await self.sendCmd(
-      RoboCmd(kind: SetArmCmd, setArmCmd: SetArmCmdObj(
-        expanderCmd: int16(cmd.expanderCommand * int16.high.float64),
-        tiltCmd: int16(cmd.tiltCommand * int16.high.float64),
-      )))
+      RoboCmd(kind: SetArmLength, setArmLength: SetArmLengthObj(length: int16(cmd.length / 1000.0))))
+    await self.sendCmd(
+      RoboCmd(kind: SetArmAngle, setArmAngle: SetArmAngleObj(angle: int16(cmd.angle / 1000.0))))
 
 proc openCan(self) {.async.} =
-  while self.can == nil or not self.can.isOpened:
-    let name = self.params.get("can_interface").strVal
-    try:
-      self.can = createCANSocket(name)
-      self.canOpenedEvent.fire()
-      self.logger.info fmt"can interface '{name}' opened"
-      return
-    except CatchableError:
-      self.logger.warn fmt"failed to open '{name}'"
-      if self.node.context.isShuttingDown:
-        raise newException(ShutdownError, "shutting down")
-      await sleepAsync 1.seconds
+  while true:
+    if self.can == nil or not self.can.isOpened:
+      let name = self.params.get("can_interface").strVal
+      try:
+        self.can = createCANSocket(name)
+        self.canOpenedEvent.fire()
+        self.logger.info fmt"can interface '{name}' opened"
+        return
+      except CatchableError:
+        self.logger.warn fmt"failed to open '{name}'"
+        if self.node.context.isShuttingDown:
+          raise newException(ShutdownError, "shutting down")
+    await sleepAsync 1.seconds
 
 proc canReadLoop(self) {.async.} =
   while true:
@@ -263,7 +261,6 @@ proc canReadLoop(self) {.async.} =
       except OSError:
         self.can.close()
         self.canOpenedEvent.clear()
-        await self.openCan()
 
     if frame.id != (self.params.get("can_id").intVal + 1).CANId: continue
     if frame.kind != Data or frame.format != Standard or frame.len != 8: continue
@@ -275,6 +272,9 @@ proc canReadLoop(self) {.async.} =
     of GET_PARAM_RESPONSE: await self.roboGetParamResponseQueue.put(fb.getParamResponse)
     of ODOMETRY:
       var msg = OdometryMsg()
+      msg.header.frameId = "odom"
+      msg.header.stamp = self.node.clock.now().toMsg()
+      msg.childFrameId = "base_footprint"
       msg.twist.twist.linear.x = float(fb.odometry.vx) * 1e-3
       msg.twist.twist.linear.y = float(fb.odometry.vy) * 1e-3
       msg.twist.twist.angular.z = float(fb.odometry.angVel) * 1e-3
@@ -304,7 +304,6 @@ proc canWriteLoop(self) {.async.} =
       except OSError:
         self.can.close()
         self.canOpenedEvent.clear()
-        await self.openCan()
 
 proc updateVelocity(self; dt: Duration) =
   let dtSec = dt.nanoseconds.float * 1e-9
@@ -403,16 +402,11 @@ proc shutdownChecker(self) {.async.} =
       await sleepAsync 100.milliseconds
 
 proc run(self) {.async.} =
-  try:
-    await self.openCan()
-  except ShutdownError:
-    echo "Shutting down"
-    return
-
   let tasks = [
+    self.openCan(),
     self.paramEventLoop(),
     self.cmdSubLoop(),
-    self.getOverSrvLoop(),
+    self.largeWheelCmdSubLoop(),
     self.unwindSrvLoop(),
     self.donfanCmdSubLoop(),
     self.expanderCmdSubLoop(),
