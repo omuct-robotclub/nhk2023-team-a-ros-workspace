@@ -46,7 +46,7 @@ type
     RESET_PID,
     SET_TARGET_VELOCITY,
     SET_DONFAN_CMD,
-    SET_EXPANDER_CMD,
+    SET_EXPANDER_LENGTH,
     SET_COLLECTOR_CMD,
     SET_ARM_ANGLE,
     SET_ARM_LENGTH,
@@ -66,11 +66,11 @@ type
   SetDonfanCmdObj* {.packed.} = object
     dir*: int8
   
-  SetExpanderCmdObj* {.packed.} = object
-    cmd*: int16
+  SetExpanderLengthObj* {.packed.} = object
+    length*: int16
   
   SetCollectorCmdObj* {.packed.} = object
-    cmd*: int16
+    enable*: bool
   
   SetArmAngleObj* {.packed.} = object
     angle*: int16
@@ -88,7 +88,7 @@ type
     of RESET_PID: discard
     of SET_TARGET_VELOCITY: setTargetVelocity*: SetTargetVelocityObj
     of SET_DONFAN_CMD: setDonfanCmd*: SetDonfanCmdObj
-    of SET_EXPANDER_CMD: setExpanderCmd*: SetExpanderCmdObj
+    of SET_EXPANDER_LENGTH: setExpanderLength*: SetExpanderLengthObj
     of SET_COLLECTOR_CMD: setCollectorCmd*: SetCollectorCmdObj
     of SET_ARM_ANGLE: setArmAngle*: SetArmAngleObj
     of SET_ARM_LENGTH: setArmLength*: SetArmLengthObj

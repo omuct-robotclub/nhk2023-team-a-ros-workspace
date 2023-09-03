@@ -59,7 +59,7 @@ struct Command {
     RESET_PID,
     SET_TARGET_VELOCITY,
     SET_DONFAN_CMD,
-    SET_EXPANDER_CMD,
+    SET_EXPANDER_LENGTH,
     SET_COLLECTOR_CMD,
     SET_ARM_ANGLE,
     SET_ARM_LENGTH,
@@ -88,8 +88,8 @@ struct Command {
     int8_t dir; // 1: 正転、 0: 停止、 -1: 逆転
   } PROTOCOL_PACKED;
 
-  struct SetExpanderCmd {
-    int16_t cmd; // +展開
+  struct SetExpanderLength {
+    int16_t length; // 長さ　下がりきった状態が0 展開方向が+ [mm]
   } PROTOCOL_PACKED;
 
   struct SetCollectorCmd {
@@ -101,7 +101,7 @@ struct Command {
   } PROTOCOL_PACKED;
 
   struct SetArmLength {
-    int16_t length; // 長さ 初期位置が0 展開方向が+ [mm]
+    int16_t length; // 長さ 下がりきった状態が0 展開方向が+ [mm]
   } PROTOCOL_PACKED;
 
   struct SetLargeWheelCmd {
@@ -123,7 +123,7 @@ struct Command {
     SetDonfanCmd set_donfan_cmd;
 
     // ロジャー
-    SetExpanderCmd set_expander_cmd;
+    SetExpanderLength set_expander_length;
 
     // 下から回収
     SetCollectorCmd set_collector_cmd;

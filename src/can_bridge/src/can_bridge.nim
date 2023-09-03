@@ -8,9 +8,8 @@ import ./protocols
 
 importInterface geometry_msgs/msg/[twist, vector3]
 importInterface nav_msgs/msg/odometry, Odometry as OdometryMsg
-importInterface std_msgs/msg/[int8, float64]
-importInterface robot_interface/srv/[get_over, unwind], get_over.GetOver as GetOverSrv, unwind.Unwind as UnwindSrv
-importInterface robot_interface/msg/arm_command
+importInterface std_msgs/msg/[int8 as int8_msg, float64 as float64_msg, bool as bool_msg], bool_msg.Bool as BoolMsg
+importInterface robot_interface/srv/unwind, Unwind as UnwindSrv
 
 func toDurationSec(f: float): Duration =
   int(f*1e9).nanoseconds
@@ -33,12 +32,12 @@ type CanBridgeNode = ref object
 
   cmdVelSub: Subscription[Twist]
   cmdVelFilteredPub: Publisher[Twist]
-  getOverSrv: Service[GetOverSrv]
   unwindSrv: Service[UnwindSrv]
   donfanCmdSub: Subscription[Int8]
-  expanderCmdSub: Subscription[Float64]
-  collectorCmdSub: Subscription[Float64]
-  armCmdSub: Subscription[ArmCommand]
+  expanderLengthSub: Subscription[Float64]
+  collectorCmdSub: Subscription[BoolMsg]
+  armLengthSub: Subscription[Float64]
+  armAngleSub: Subscription[Float64]
   largeWheelCmdSub: Subscription[Float64]
 
   odomPub: Publisher[OdometryMsg]
@@ -63,12 +62,12 @@ proc newCanBridgeNode(): CanBridgeNode =
   result.params = result.node.createParamServer()
   result.cmdVelSub = result.node.createSubscription(Twist, "cmd_vel", SystemDefaultQoS)
   result.cmdVelFilteredPub = result.node.createPublisher(Twist, "cmd_vel_filtered", SensorDataQoS)
-  result.getOverSrv = result.node.createService(GetOverSrv, "get_over", SystemDefaultQoS)
   result.unwindSrv = result.node.createService(UnwindSrv, "unwind", ServiceDefaultQoS)
   result.donfanCmdSub = result.node.createSubscription(Int8, "donfan_cmd", SystemDefaultQoS)
-  result.expanderCmdSub = result.node.createSubscription(Float64, "expander_cmd", SystemDefaultQoS)
-  result.collectorCmdSub = result.node.createSubscription(Float64, "collector_cmd", SystemDefaultQoS)
-  result.armCmdSub = result.node.createSubscription(ArmCommand, "arm_cmd", SystemDefaultQoS)
+  result.expanderLengthSub = result.node.createSubscription(Float64, "expander_length", SystemDefaultQoS)
+  result.collectorCmdSub = result.node.createSubscription(BoolMsg, "collector_cmd", SystemDefaultQoS)
+  result.armLengthSub = result.node.createSubscription(Float64, "arm_length", SystemDefaultQoS)
+  result.armAngleSub = result.node.createSubscription(Float64, "arm_angle", SystemDefaultQoS)
   result.largeWheelCmdSub = result.node.createSubscription(Float64, "large_wheel_cmd", SystemDefaultQoS)
   result.odomPub = result.node.createPublisher(OdometryMsg, "odom", SensorDataQoS)
 
@@ -219,21 +218,25 @@ proc donfanCmdSubLoop(self) {.async.} =
 
 proc expanderCmdSubLoop(self) {.async.} =
   while true:
-    let cmd = await self.expanderCmdSub.recv()
-    await self.sendCmd(RoboCmd(kind: SetExpanderCmd, setExpanderCmd: SetExpanderCmdObj(cmd: int16(cmd.data * int16.high.float64))))
+    let cmd = await self.expanderLengthSub.recv()
+    await self.sendCmd(RoboCmd(kind: SetExpanderLength, setExpanderLength: SetExpanderLengthObj(length: int16(cmd.data / 1000.0))))
 
 proc collectorCmdSubLoop(self) {.async.} =
   while true:
     let cmd = await self.collectorCmdSub.recv()
-    await self.sendCmd(RoboCmd(kind: SetCollectorCmd, setCollectorCmd: SetCollectorCmdObj(cmd: int16(cmd.data * int16.high.float64))))
+    await self.sendCmd(RoboCmd(kind: SetCollectorCmd, setCollectorCmd: SetCollectorCmdObj(enable: cmd.data)))
 
-proc armCmdSubLoop(self) {.async.} =
+proc armLengthSubLoop(self) {.async.} =
   while true:
-    let cmd = await self.armCmdSub.recv()
+    let cmd = await self.armLengthSub.recv()
     await self.sendCmd(
-      RoboCmd(kind: SetArmLength, setArmLength: SetArmLengthObj(length: int16(cmd.length / 1000.0))))
+      RoboCmd(kind: SetArmLength, setArmLength: SetArmLengthObj(length: int16(cmd.data / 1000.0))))
+
+proc armAngleSubLoop(self) {.async.} =
+  while true:
+    let cmd = await self.armAngleSub.recv()
     await self.sendCmd(
-      RoboCmd(kind: SetArmAngle, setArmAngle: SetArmAngleObj(angle: int16(cmd.angle / 1000.0))))
+      RoboCmd(kind: SetArmAngle, setArmAngle: SetArmAngleObj(angle: int16(cmd.data / 1000.0))))
 
 proc openCan(self) {.async.} =
   while true:
@@ -411,7 +414,8 @@ proc run(self) {.async.} =
     self.donfanCmdSubLoop(),
     self.expanderCmdSubLoop(),
     self.collectorCmdSubLoop(),
-    self.armCmdSubLoop(),
+    self.armLengthSubLoop(),
+    self.armAngleSubLoop(),
     self.velCmdLoop(),
     self.roboSetupLoop(),
     self.canReadLoop(),

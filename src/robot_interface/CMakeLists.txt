@@ -17,7 +17,6 @@ find_package(rosidl_default_generators REQUIRED)
 
 set(interface_files
   "srv/Unwind.srv"
-  "msg/ArmCommand.msg"
 )
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${interface_files}
