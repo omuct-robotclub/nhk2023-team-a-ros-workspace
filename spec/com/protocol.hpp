@@ -85,7 +85,7 @@ struct Command {
   } PROTOCOL_PACKED;
 
   struct SetDonfanCmd {
-    int8_t dir = 0; // 1: 正転、 0: 停止、 -1: 逆転
+    int8_t dir; // 1: 正転、 0: 停止、 -1: 逆転
   } PROTOCOL_PACKED;
 
   struct SetExpanderCmd {
