@@ -47,6 +47,8 @@
             rosPkgs.nav2_lifecycle_manager
             rosPkgs.backward_ros
             rosPkgs.urg_node
+            rosPkgs.plotjuggler_ros
+            rosPkgs.plotjuggler
             pkgs.flann
             pkgs.gdb
           ];
