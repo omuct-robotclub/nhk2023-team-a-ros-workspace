@@ -9,7 +9,7 @@ import ./protocols
 importInterface geometry_msgs/msg/[twist, vector3]
 importInterface nav_msgs/msg/odometry, Odometry as OdometryMsg
 importInterface std_msgs/msg/[int8 as int8_msg, float64 as float64_msg, bool as bool_msg], bool_msg.Bool as BoolMsg
-importInterface robot_interface/srv/unwind, Unwind as UnwindSrv
+importInterface std_srvs/srv/trigger
 
 func toDurationSec(f: float): Duration =
   int(f*1e9).nanoseconds
@@ -32,7 +32,7 @@ type CanBridgeNode = ref object
 
   cmdVelSub: Subscription[Twist]
   cmdVelFilteredPub: Publisher[Twist]
-  unwindSrv: Service[UnwindSrv]
+  unwindSrv: Service[Trigger]
   donfanCmdSub: Subscription[Int8]
   expanderLengthSub: Subscription[Float64]
   collectorCmdSub: Subscription[BoolMsg]
@@ -62,7 +62,7 @@ proc newCanBridgeNode(): CanBridgeNode =
   result.params = result.node.createParamServer()
   result.cmdVelSub = result.node.createSubscription(Twist, "cmd_vel", SystemDefaultQoS)
   result.cmdVelFilteredPub = result.node.createPublisher(Twist, "cmd_vel_filtered", SensorDataQoS)
-  result.unwindSrv = result.node.createService(UnwindSrv, "unwind", ServiceDefaultQoS)
+  result.unwindSrv = result.node.createService(Trigger, "unwind", ServiceDefaultQoS)
   result.donfanCmdSub = result.node.createSubscription(Int8, "donfan_cmd", SystemDefaultQoS)
   result.expanderLengthSub = result.node.createSubscription(Float64, "expander_length", SystemDefaultQoS)
   result.collectorCmdSub = result.node.createSubscription(BoolMsg, "collector_cmd", SystemDefaultQoS)
@@ -201,7 +201,7 @@ proc unwindSrvLoop(self) {.async.} =
     let (_, sender) = await self.unwindSrv.recv()
     self.logger.info "unwinding"
     await self.sendCmd(RoboCmd(kind: UNWIND_STEER))
-    sender.send(UnwindResponse(success: true))
+    sender.send(TriggerResponse(success: true))
 
     # let success = await self.roboSteerUnwindDoneQueue.get()
     # echo "waiting queue"
@@ -212,29 +212,34 @@ proc donfanCmdSubLoop(self) {.async.} =
   while true:
     let cmd = await self.donfanCmdSub.recv()
     if cmd.data notin [-1, 0, 1]:
-      self.logger.warn "invalid command"
+      self.logger.warn "donfan: invalid command"
       continue
+    self.logger.info "donfan: ", cmd.data
     await self.sendCmd(RoboCmd(kind: SetDonfanCmd, setDonfanCmd: SetDonfanCmdObj(dir: cmd.data)))
 
 proc expanderCmdSubLoop(self) {.async.} =
   while true:
     let cmd = await self.expanderLengthSub.recv()
+    self.logger.info "expand: ", cmd.data
     await self.sendCmd(RoboCmd(kind: SetExpanderLength, setExpanderLength: SetExpanderLengthObj(length: int16(cmd.data / 1000.0))))
 
 proc collectorCmdSubLoop(self) {.async.} =
   while true:
     let cmd = await self.collectorCmdSub.recv()
+    self.logger.info "collector: ", cmd.data
     await self.sendCmd(RoboCmd(kind: SetCollectorCmd, setCollectorCmd: SetCollectorCmdObj(enable: cmd.data)))
 
 proc armLengthSubLoop(self) {.async.} =
   while true:
     let cmd = await self.armLengthSub.recv()
+    self.logger.info "arm length: ", cmd.data
     await self.sendCmd(
       RoboCmd(kind: SetArmLength, setArmLength: SetArmLengthObj(length: int16(cmd.data / 1000.0))))
 
 proc armAngleSubLoop(self) {.async.} =
   while true:
     let cmd = await self.armAngleSub.recv()
+    self.logger.info "arm angle: ", cmd.data
     await self.sendCmd(
       RoboCmd(kind: SetArmAngle, setArmAngle: SetArmAngleObj(angle: int16(cmd.data / 1000.0))))
 
