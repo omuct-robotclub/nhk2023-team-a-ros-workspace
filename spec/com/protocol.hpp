@@ -41,6 +41,7 @@ enum ParamId : uint8_t {
   STEER_ANTIWINDUP,
   STEER_USE_VELOCITY_FOR_D_TERM,
 
+  // ステア角の微調整
   STEER0_OFFSET,
   STEER1_OFFSET,
   STEER2_OFFSET,
@@ -60,8 +61,10 @@ struct Command {
     SET_DONFAN_CMD,
     SET_EXPANDER_CMD,
     SET_COLLECTOR_CMD,
-    SET_ARM_CMD,
+    SET_ARM_ANGLE,
+    SET_ARM_LENGTH,
     UNWIND_STEER,
+    SET_LARGE_WHEEL_CMD,
     ACTIVATE,
   };
 
@@ -82,7 +85,7 @@ struct Command {
   } PROTOCOL_PACKED;
 
   struct SetDonfanCmd {
-    int16_t cmd; // +展開 -曲がる
+    int8_t dir = 0; // 1: 正転、 0: 停止、 -1: 逆転
   } PROTOCOL_PACKED;
 
   struct SetExpanderCmd {
@@ -90,13 +93,19 @@ struct Command {
   } PROTOCOL_PACKED;
 
   struct SetCollectorCmd {
-    int16_t cmd; // +回収
+    bool enable; // trueなら回収開始、falseなら回収停止
   } PROTOCOL_PACKED;
 
-  struct SetArmCmd {
-    uint8_t index; // 操作する機構の番号
-    int16_t expander_cmd; // +展開 -縮小
-    int16_t tilt_cmd; // +正転 -逆転
+  struct SetArmAngle {
+    int16_t angle; // 角度 初期位置が0 前方向が+ [mrad]
+  } PROTOCOL_PACKED;
+
+  struct SetArmLength {
+    int16_t length; // 長さ 初期位置が0 展開方向が+ [mm]
+  } PROTOCOL_PACKED;
+
+  struct SetLargeWheelCmd {
+    int16_t cmd; // +正転 -逆転 32767が最大
   } PROTOCOL_PACKED;
 
   union {
@@ -116,11 +125,17 @@ struct Command {
     // ロジャー
     SetExpanderCmd set_expander_cmd;
 
-    // ペチペチくん
+    // 下から回収
     SetCollectorCmd set_collector_cmd;
 
-    // お助けロジャー
-    SetArmCmd set_arm_cmd;
+    // お助け角度
+    SetArmAngle set_arm_angle;
+
+    // お助け長さ
+    SetArmLength set_arm_length;
+
+    //　段超え
+    SetLargeWheelCmd set_large_wheel_cmd;
   };
 } PROTOCOL_PACKED;
 
