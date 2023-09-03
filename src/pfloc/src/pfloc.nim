@@ -25,6 +25,7 @@ type
   PflocNode = ref object
     node: Node
     odomSub: Subscription[Odometry]
+    odomFilteredPub: Publisher[Odometry]
     tfPub: Publisher[TFMessage]
     lastOdom: Odometry
     roboPose: Pose
@@ -36,6 +37,7 @@ proc new(_: typedesc[PflocNode]): PflocNode =
   result = PflocNode()
   result.node = Node.new("pfloc")
   result.odomSub = result.node.createSubscription(Odometry, "odom", SensorDataQoS)
+  result.odomFilteredPub = result.node.createPublisher(Odometry, "odom_filtered", SensorDataQoS)
   result.tfPub = result.node.createPublisher(TFMessage, "/tf", SystemDefaultQoS.withPolicies(depth = 100))
 
 func quatFromAxisAngle*(x, y, z, angle: float): Quaternion =
@@ -54,7 +56,7 @@ proc loop(self: PflocNode) {.async.} =
   self.roboPose.pos += vel.xy * dtSec
   self.roboPose.yaw += self.lastOdom.twist.twist.angular.z * dtSec
 
-  let stamp = times.getTime()
+  let stamp = times.`+`(times.getTime(), times.initDuration(milliseconds=0))
   var tf = TransformStamped(
     header: Header(frameId: "odom", stamp: TimeMsg(sec: times.toUnix(stamp).int32, nanosec: times.nanosecond(stamp).uint32)),
     childFrameId: "base_footprint",
@@ -64,7 +66,12 @@ proc loop(self: PflocNode) {.async.} =
     )
   )
   self.tfPub.publish(TFMessage(transforms: @[tf]))
-  # echo self.roboPose.yaw
+
+  var filtered = self.lastOdom
+  filtered.pose.pose.position.x = self.roboPose.pos.x
+  filtered.pose.pose.position.y = self.roboPose.pos.y
+  filtered.pose.pose.orientation = quatFromAxisAngle(0, 0, 1, self.roboPose.yaw)
+  self.odomFilteredPub.publish(filtered)
 
 proc run(self: PflocNode) {.async.} =
   var futs = newSeq[Future[void]]()
