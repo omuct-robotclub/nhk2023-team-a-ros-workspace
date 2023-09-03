@@ -4,20 +4,14 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /Global Options1
-        - /Status1
+        - /LaserScan01/Topic1
+        - /LaserScan11/Topic1
+        - /LaserScan21/Topic1
         - /LaserScan1/Topic1
-        - /LaserScan2/Topic1
-        - /LaserScan3/Topic1
-        - /LaserScan4
-        - /LaserScan4/Topic1
         - /TF1/Frames1
         - /RobotModel1/Description Topic1
-        - /Map1
-        - /Map1/Status1
         - /Map1/Topic1
         - /Map1/Update Topic1
-        - /PoseArray1
         - /PoseArray1/Topic1
       Splitter Ratio: 0.5
     Tree Height: 1825
@@ -78,7 +72,7 @@ Visualization Manager:
       Max Intensity: 4096
       Min Color: 0; 0; 0
       Min Intensity: 0
-      Name: LaserScan
+      Name: LaserScan0
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 3
@@ -112,11 +106,11 @@ Visualization Manager:
       Max Intensity: 4096
       Min Color: 0; 0; 0
       Min Intensity: 0
-      Name: LaserScan
+      Name: LaserScan1
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.009999999776482582
+      Size (m): 0.05000000074505806
       Style: Flat Squares
       Topic:
         Depth: 5
@@ -146,11 +140,11 @@ Visualization Manager:
       Max Intensity: 4096
       Min Color: 0; 0; 0
       Min Intensity: 0
-      Name: LaserScan
+      Name: LaserScan2
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.009999999776482582
+      Size (m): 0.05000000074505806
       Style: Flat Squares
       Topic:
         Depth: 5
@@ -452,16 +446,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 28.679157257080078
+      Distance: 20.68079948425293
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 4.282104969024658
-        Y: 1.9995681047439575
-        Z: 0.2561470866203308
+        X: 4.183363437652588
+        Y: 4.76444673538208
+        Z: 0.2083999514579773
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -470,7 +464,7 @@ Visualization Manager:
       Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.72358512878418
+      Yaw: 3.143584728240967
     Saved: ~
 Window Geometry:
   Displays:
@@ -488,5 +482,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1912
-  X: 1904
+  X: 1920
   Y: 0
