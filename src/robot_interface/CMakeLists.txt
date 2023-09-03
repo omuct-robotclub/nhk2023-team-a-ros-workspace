@@ -16,7 +16,6 @@ find_package(builtin_interfaces REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 set(interface_files
-  "srv/GetOver.srv"
   "srv/Unwind.srv"
   "msg/ArmCommand.msg"
 )
