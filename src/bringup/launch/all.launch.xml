@@ -1,13 +1,14 @@
 <launch>
   <arg name="simulation" default="false"/>
+  <arg name="manual" default="false" />
 
   <node unless="$(var simulation)" pkg="can_bridge" exec="can_bridge">
     <param from="$(find-pkg-share bringup)/config/can_bridge.yaml" />
   </node>
 
-  <node pkg="pfloc" exec="pfloc" />
+  <node unless="$(var manual)" pkg="pfloc" exec="pfloc" />
 
-  <node pkg="emcl2" exec="emcl2_node">
+  <node unless="$(var manual)" pkg="emcl2" exec="emcl2_node">
     <param name="sensor_reset" value="false" />
     <param name="num_particles" value="50" />
     <param name="range_threshold" value="0.05" />
@@ -22,16 +23,16 @@
     <param name="initial_pose_a" value="0.0" />
   </node>
 
-  <node pkg="nav2_map_server" exec="map_server">
+  <node unless="$(var manual)" pkg="nav2_map_server" exec="map_server">
     <param name="yaml_filename" value="$(find-pkg-share bringup)/map/map.yaml" />
   </node>
 
-  <node pkg="nav2_lifecycle_manager" exec="lifecycle_manager" name="lifecycle_manager">
+  <node unless="$(var manual)" pkg="nav2_lifecycle_manager" exec="lifecycle_manager" name="lifecycle_manager">
     <param name="node_names" value="['map_server']" />
     <param name="autostart" value="true" />
   </node>
 
-  <node pkg="laserscan_marger" exec="laserscan_marger_node" >
+  <node unless="$(var manual)" pkg="laserscan_marger" exec="laserscan_marger_node" >
     <param name="scan_input_topics" value="[scan0, scan1, scan2]"/>
     <param name="out_points" value="2000"/>
     <param name="publish_frequency" value="10.0"/>
@@ -39,7 +40,7 @@
     <param name="out_range_min" value="0.5" />
   </node>
 
-  <node pkg="robot_state_publisher" exec="robot_state_publisher">
+  <node unless="$(var manual)" pkg="robot_state_publisher" exec="robot_state_publisher">
     <param name='robot_description' value="$(command 'xacro $(find-pkg-share bringup)/urdf/robot.urdf.xacro')"/>
     <param name="publish_frequency" value="100.0" />
     <param name="ignore_timestamp" value="true" />
