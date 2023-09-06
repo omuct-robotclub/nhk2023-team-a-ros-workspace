@@ -1,13 +1,11 @@
 import rclnim
 import rclnim/chronossupport
-from std/times import nil
 import chronos
 import std/math
 importInterface nav_msgs/msg/odometry
 importInterface tf2_msgs/msg/tf_message
 importInterface geometry_msgs/msg/[vector3, quaternion, transform, transform_stamped]
 importInterface std_msgs/msg/header
-importInterface builtin_interfaces/msg/time, Time as TimeMsg
 import vmath
 
 proc onMessage[T](sub: Subscription[T], cb: proc(msg: sink T) {.async.}): Future[void] =
@@ -56,9 +54,8 @@ proc loop(self: PflocNode) {.async.} =
   self.roboPose.pos += vel.xy * dtSec
   self.roboPose.yaw += self.lastOdom.twist.twist.angular.z * dtSec
 
-  let stamp = times.`+`(times.getTime(), times.initDuration(milliseconds=0))
   var tf = TransformStamped(
-    header: Header(frameId: "odom", stamp: TimeMsg(sec: times.toUnix(stamp).int32, nanosec: times.nanosecond(stamp).uint32)),
+    header: Header(frameId: "odom", stamp: self.node.clock.now().toMsg()),
     childFrameId: "base_footprint",
     transform: Transform(
       translation: Vector3(x: self.roboPose.pos.x, y: self.roboPose.pos.y),
