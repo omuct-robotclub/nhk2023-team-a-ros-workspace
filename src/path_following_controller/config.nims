@@ -1,0 +1,1 @@
+switch("path", "/home/aoi/work/nim/geonimetry/src")
