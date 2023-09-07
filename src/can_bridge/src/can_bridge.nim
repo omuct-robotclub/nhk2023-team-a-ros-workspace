@@ -5,6 +5,7 @@ import std/[options, strformat, with, strutils, tables]
 import ./socketcan
 import vmath
 import ./protocols
+import ./objparamservers
 
 importInterface geometry_msgs/msg/[twist, vector3]
 importInterface nav_msgs/msg/odometry, Odometry as OdometryMsg
@@ -19,11 +20,72 @@ type RoboState = enum
   Configuring
   Running
 
+type
+  PidParameters = object
+    kp, ki, kd, max, min: float64
+    use_velocity_for_d_term, antiwindup: bool
+  
+  SteerParameters = object
+    offset: float64
+
+  Parameters = object
+    can_id: int64
+    can_interface: string
+    command_lifespan_sec: float64
+    linear_accel_limit: float64
+    angular_accel_limit: float64
+
+    drive: PidParameters
+    steer: PidParameters
+    steer0, steer1, steer2, steer3: SteerParameters
+
+const DefaultParameter = Parameters(
+  can_id: 200,
+  can_interface: "can0",
+  command_lifespan_sec: 1.0,
+  linear_accel_limit: 10.0,
+  angular_accel_limit: 10.0,
+  drive: PidParameters(
+    kp: 1.0, ki: 4.0, kd: 0.0, max: 20.0, min: -20.0, use_velocity_for_d_term: false, antiwindup: true
+  ),
+  steer: PidParameters(
+    kp: 2.0, ki: 0.8, kd: 0.0, max: 0.9, min: -0.9, use_velocity_for_d_term: true, antiwindup: false
+  ),
+)
+
+  #   declare("drive.kp", 1.0)
+  #   declare("drive.ki", 4.0)
+  #   declare("drive.kd", 0.0)
+  #   declare("drive.max", 20.0)
+  #   declare("drive.min", -20.0)
+  #   declare("drive.use_velocity_for_d_term", false)
+  #   declare("drive.antiwindup", true)
+
+  #   declare("steer.kp", 2.0)
+  #   declare("steer.ki", 0.8)
+  #   declare("steer.kd", 0.0)
+  #   declare("steer.max", 0.9)
+  #   declare("steer.min", -0.9)
+  #   declare("steer.use_velocity_for_d_term", true)
+  #   declare("steer.antiwindup", false)
+
+  #   declare("steer0.offset", 0.0)
+  #   declare("steer1.offset", 0.0)
+  #   declare("steer2.offset", 0.0)
+  #   declare("steer3.offset", 0.0)
+
+  #   declare("can_id", 200)
+  #   declare("can_interface", "can0")
+  #   declare("command_lifespan_sec", 1.0)
+  #   declare("linear_accel_limit", 10.0)
+  #   declare("angular_accel_limit", 10.0)
+
+
 type CanBridgeNode = ref object
   node: Node
   can: CanSocket
   timer: AsyncFD
-  params: ParamServer
+  params: ObjParamServer[Parameters]
   lastCmdTime: Moment
   presentLinearVel: Vec2
   presentAngVel: float
@@ -59,7 +121,7 @@ func logger(self): Logger =
 proc newCanBridgeNode(): CanBridgeNode =
   new result
   result.node = newNode("can_bridge")
-  result.params = result.node.createParamServer()
+  result.params = result.node.createObjParamServer(DefaultParameter)
   result.cmdVelSub = result.node.createSubscription(Twist, "cmd_vel", SystemDefaultQoS)
   result.cmdVelFilteredPub = result.node.createPublisher(Twist, "cmd_vel_filtered", SensorDataQoS)
   result.unwindSrv = result.node.createService(Trigger, "unwind", ServiceDefaultQoS)
@@ -80,40 +142,10 @@ proc newCanBridgeNode(): CanBridgeNode =
   result.canOpenedEvent = newAsyncEvent()
   result.canWriteQueue = newAsyncQueue[(CANFrame, Future[void])]()
 
-  with result.params:
-    declare("drive.kp", 1.0)
-    declare("drive.ki", 4.0)
-    declare("drive.kd", 0.0)
-    declare("drive.max", 20.0)
-    declare("drive.min", -20.0)
-    declare("drive.use_velocity_for_d_term", false)
-    declare("drive.antiwindup", true)
-
-    declare("steer.kp", 2.0)
-    declare("steer.ki", 0.8)
-    declare("steer.kd", 0.0)
-    declare("steer.max", 0.9)
-    declare("steer.min", -0.9)
-    declare("steer.use_velocity_for_d_term", true)
-    declare("steer.antiwindup", false)
-
-    declare("steer0.offset", 0.0)
-    declare("steer1.offset", 0.0)
-    declare("steer2.offset", 0.0)
-    declare("steer3.offset", 0.0)
-
-    declare("can_id", 200)
-    declare("can_interface", "can0")
-    declare("command_lifespan_sec", 1.0)
-    declare("linear_accel_limit", 10.0)
-    declare("angular_accel_limit", 10.0)
-
-    endDeclaration()
-
 proc sendCmd*(self; cmd: RoboCmd): Future[void] =
   let cmdData = RoboCmdData(msg: cmd)
   let frame = CANFrame(
-    id: self.params.get("can_id").intVal.CANId,
+    id: self.params.value.can_id.CANId,
     kind: Data, format: Standard, len: 8, data: cmdData.bytes
   )
   result = newFuture[void]("sendCmd")
@@ -177,11 +209,13 @@ proc syncParameter(self; name: string, value: ParamValue) {.async.} =
       value: RoboParamValue(kind: Float, floatVal: value.doubleVal)))
 
 proc paramEventLoop(self) {.async.} =
-  while true:
-    for ev in await self.params.waitForUpdate():
-      if ev.kind != Changed: continue
-      echo ev
-      await self.syncParameter(ev.name, ev.param)
+  let key = self.params.eventQueue.register()
+  await sleepAsync 10000.milliseconds
+  # while true:
+  #   for ev in await self.params.eventQueue.waitEvents(key):
+  #     if ev.kind == Changed:
+  #       echo ev
+  #       await self.syncParameter(ev.name, ev.param)
 
 proc cmdSubLoop(self) {.async.} =
   while true:
@@ -246,7 +280,7 @@ proc armAngleSubLoop(self) {.async.} =
 proc openCan(self) {.async.} =
   while true:
     if self.can == nil or not self.can.isOpened:
-      let name = self.params.get("can_interface").strVal
+      let name = self.params.value.can_interface
       try:
         self.can = createCANSocket(name)
         self.canOpenedEvent.fire()
@@ -270,7 +304,7 @@ proc canReadLoop(self) {.async.} =
         self.can.close()
         self.canOpenedEvent.clear()
 
-    if frame.id != (self.params.get("can_id").intVal + 1).CANId: continue
+    if frame.id != (self.params.value.can_id + 1).CANId: continue
     if frame.kind != Data or frame.format != Standard or frame.len != 8: continue
     var fb = RoboFeedback()
     copyMem(addr fb, addr frame.data, sizeof(fb))
@@ -320,7 +354,7 @@ proc updateVelocity(self; dt: Duration) =
     let
       tgt = self.targetLinearVel
       cur = self.presentLinearVel
-      lim = self.params.get("linear_accel_limit").doubleVal * dtSec
+      lim = self.params.value.linear_accel_limit * dtSec
     if tgt.dist(cur) > lim:
       let dir = normalize(tgt - cur)
       self.presentLinearVel += dir * lim
@@ -331,7 +365,7 @@ proc updateVelocity(self; dt: Duration) =
     let
       tgt = self.targetAngVel
       cur = self.presentAngVel
-      lim = self.params.get("angular_accel_limit").doubleVal * dtSec
+      lim = self.params.value.angular_accel_limit * dtSec
     if abs(tgt - cur) > lim:
       let dir = sign(tgt - cur)
       self.presentAngVel += dir * lim
@@ -360,7 +394,7 @@ proc velCmdLoop(self) {.async.} =
     let now = Moment.now()
     let dt = now - prevLoopRun
     prevLoopRun = now
-    let cmdLifespan = self.params.get("command_lifespan_sec").doubleVal.toDurationSec()
+    let cmdLifespan = self.params.value.command_lifespan_sec.toDurationSec()
     if now - self.lastCmdTime > cmdLifespan:
       self.targetLinearVel = Vec2.zeroDefault
       self.targetAngVel = 0.0
@@ -375,25 +409,8 @@ proc roboSetupLoop(self) {.async.} =
     case self.roboState
     of Configuring:
       self.logger.info "setting up"
-      const params = [
-        "drive.kp",
-        "drive.ki",
-        "drive.kd",
-        "drive.max",
-        "drive.min",
-        "drive.antiwindup",
-        "drive.use_velocity_for_d_term",
-        "steer.kp",
-        "steer.ki",
-        "steer.kd",
-        "steer.max",
-        "steer.min",
-        "steer.antiwindup",
-        "steer.use_velocity_for_d_term",
-      ]
-      for toSync in params:
-        echo toSync
-        await self.syncParameter(toSync, self.params.get(toSync))
+      for toSync in self.params.server.names:
+        await self.syncParameter(toSync, self.params.server.get(toSync))
       await self.sendCmd(RoboCmd(kind: ACTIVATE))
       await self.roboStateEvent.wait()
       self.roboStateEvent.clear()
