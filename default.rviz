@@ -13,6 +13,7 @@ Panels:
         - /Map1/Topic1
         - /Map1/Update Topic1
         - /PoseArray1/Topic1
+        - /Map2/Topic1
       Splitter Ratio: 0.5
     Tree Height: 1825
   - Class: rviz_common/Selection
@@ -400,6 +401,27 @@ Visualization Manager:
       Radius: 0.10000000149011612
       Reference Frame: <Fixed Frame>
       Value: true
+    - Alpha: 0.699999988079071
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Map
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /costmap/costmap
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /costmap/costmap_updates
+      Use Timestamp: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -446,16 +468,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 20.68079948425293
+      Distance: 28.636640548706055
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 4.183363437652588
-        Y: 4.76444673538208
-        Z: 0.2083999514579773
+        X: 3.8527002334594727
+        Y: 3.6821229457855225
+        Z: 0.2080671191215515
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -482,5 +504,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1912
-  X: 1920
+  X: 1916
   Y: 0

@@ -44,6 +44,7 @@
             rosPkgs.tinyxml2_vendor
             rosPkgs.xacro
             rosPkgs.nav2_map_server
+            rosPkgs.nav2_costmap_2d
             rosPkgs.nav2_lifecycle_manager
             rosPkgs.backward_ros
             rosPkgs.urg_node
