@@ -210,12 +210,11 @@ proc syncParameter(self; name: string, value: ParamValue) {.async.} =
 
 proc paramEventLoop(self) {.async.} =
   let key = self.params.eventQueue.register()
-  await sleepAsync 10000.milliseconds
-  # while true:
-  #   for ev in await self.params.eventQueue.waitEvents(key):
-  #     if ev.kind == Changed:
-  #       echo ev
-  #       await self.syncParameter(ev.name, ev.param)
+  while true:
+    for ev in await self.params.eventQueue.waitEvents(key):
+      if ev.kind == Changed:
+        echo ev
+        await self.syncParameter(ev.name, ev.param)
 
 proc cmdSubLoop(self) {.async.} =
   while true:
@@ -449,7 +448,7 @@ proc run(self) {.async.} =
 
   echo "Shutting down"
   for task in tasks:
-    task.cancel()
+    await task.cancelAndWait()
 
 proc main =
   rclnim.init()
