@@ -6,9 +6,9 @@
     <param from="$(find-pkg-share bringup)/config/can_bridge.yaml" />
   </node>
 
-  <node unless="$(var manual)" pkg="pfloc" exec="pfloc" />
+  <!-- <node unless="$(var manual)" pkg="pfloc" exec="pfloc" /> -->
 
-  <node unless="$(var manual)" pkg="emcl2" exec="emcl2_node">
+  <!-- <node unless="$(var manual)" pkg="emcl2" exec="emcl2_node">
     <param name="sensor_reset" value="false" />
     <param name="num_particles" value="50" />
     <param name="range_threshold" value="0.05" />
@@ -21,14 +21,24 @@
     <param name="initial_pose_x" value="-0.5" />
     <param name="initial_pose_y" value="0.5" />
     <param name="initial_pose_a" value="0.0" />
-  </node>
+  </node> -->
 
-  <node unless="$(var manual)" pkg="nav2_map_server" exec="map_server">
+  <!-- <node unless="$(var manual)" pkg="nav2_map_server" exec="map_server" name="map_server">
     <param name="yaml_filename" value="$(find-pkg-share bringup)/map/map.yaml" />
   </node>
 
+  <node unless="$(var manual)" pkg="nav2_map_server" exec="map_server" name="nav_map_server">
+    <param name="yaml_filename" value="$(find-pkg-share bringup)/map/nav_map.yaml" />
+    <remap from="map" to="nav_map" />
+    <remap from="map_update" to="nav_map_update" />
+  </node>
+
+  <node unless="$(var manual)" pkg="nav2_costmap_2d" exec="nav2_costmap_2d">
+    <param from="$(find-pkg-share bringup)/config/nav2.yaml" />
+  </node>
+
   <node unless="$(var manual)" pkg="nav2_lifecycle_manager" exec="lifecycle_manager" name="lifecycle_manager">
-    <param name="node_names" value="['map_server']" />
+    <param name="node_names" value="['map_server', 'nav_map_server', 'costmap/costmap']" />
     <param name="autostart" value="true" />
   </node>
 
@@ -44,13 +54,13 @@
     <param name='robot_description' value="$(command 'xacro $(find-pkg-share bringup)/urdf/robot.urdf.xacro')"/>
     <param name="publish_frequency" value="100.0" />
     <param name="ignore_timestamp" value="true" />
-  </node>
+  </node> -->
 
   <node pkg="udp_multicast_beacon" exec="beacon"/>
 
   <node pkg="rosbridge_server" exec="rosbridge_websocket" />
 
-  <node unless="$(var simulation)" pkg="urg_node" exec="urg_node_driver" name="lidar0_node">
+  <!-- <node unless="$(var simulation)" pkg="urg_node" exec="urg_node_driver" name="lidar0_node">
     <param name="serial_port" value="/dev/ttyACM0" />
     <param name="laser_frame_id" value="lidar0_link" />
     <remap from="scan" to="scan0" />
@@ -66,6 +76,6 @@
     <param name="serial_port_candidates" value="[/dev/serial/by-path/pci-0000:00:14.0-usb-0:2.2:1.0-port0]" />
     <param name="lidar_frame" value="lidar2_link" />
     <remap from="scan" to="scan2" />
-  </node>
+  </node> -->
 
 </launch>
