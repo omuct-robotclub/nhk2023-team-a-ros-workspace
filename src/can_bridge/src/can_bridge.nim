@@ -432,7 +432,7 @@ proc run(self) {.async.} =
 
   echo "Shutting down"
   for task in tasks:
-    task.cancel()
+    await task.cancelAndWait()
 
 proc main =
   rclnim.init()
