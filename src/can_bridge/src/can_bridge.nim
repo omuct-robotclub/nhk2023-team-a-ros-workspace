@@ -1,12 +1,15 @@
 import rclnim
 import rclnim/chronossupport
 import chronos
-import std/[options, strformat, with, strutils, tables]
+import std/[options, strformat, with, strutils, tables, oserrors]
 import ./socketcan
 import vmath
 import ./protocols
+import ./objparamservers
+import tf2/[tfbuffers, msgconverters]
+import geonimetry
 
-importInterface geometry_msgs/msg/[twist, vector3]
+importInterface geometry_msgs/msg/[twist, twist_stamped, vector3]
 importInterface nav_msgs/msg/odometry, Odometry as OdometryMsg
 importInterface std_msgs/msg/[int8 as int8_msg, float64 as float64_msg, bool as bool_msg], bool_msg.Bool as BoolMsg
 importInterface std_srvs/srv/trigger
@@ -19,11 +22,46 @@ type RoboState = enum
   Configuring
   Running
 
+type
+  PidParameters = object
+    kp, ki, kd, max, min: float64
+    use_velocity_for_d_term, antiwindup: bool
+  
+  SteerParameters = object
+    offset: float64
+
+  Parameters = object
+    can_id: int64
+    can_interface: string
+    command_lifespan_sec: float64
+    linear_accel_limit: float64
+    angular_accel_limit: float64
+
+    drive: PidParameters
+    steer: PidParameters
+    steer0, steer1, steer2, steer3: SteerParameters
+
+const DefaultParameter = Parameters(
+  can_id: 200,
+  can_interface: "can0",
+  command_lifespan_sec: 1.0,
+  linear_accel_limit: 10.0,
+  angular_accel_limit: 10.0,
+  drive: PidParameters(
+    kp: 1.0, ki: 4.0, kd: 0.0, max: 20.0, min: -20.0, use_velocity_for_d_term: false, antiwindup: true
+  ),
+  steer: PidParameters(
+    kp: 2.0, ki: 0.8, kd: 0.0, max: 0.9, min: -0.9, use_velocity_for_d_term: true, antiwindup: false
+  ),
+)
+
+
 type CanBridgeNode = ref object
   node: Node
+  buf: TfBuffer
   can: CanSocket
   timer: AsyncFD
-  params: ParamServer
+  params: ObjParamServer[Parameters]
   lastCmdTime: Moment
   presentLinearVel: Vec2
   presentAngVel: float
@@ -31,6 +69,7 @@ type CanBridgeNode = ref object
   targetAngVel: float
 
   cmdVelSub: Subscription[Twist]
+  cmdVelStampedSub: Subscription[TwistStamped]
   cmdVelFilteredPub: Publisher[Twist]
   unwindSrv: Service[Trigger]
   donfanCmdSub: Subscription[Int8]
@@ -51,6 +90,8 @@ type CanBridgeNode = ref object
   canOpenedEvent: AsyncEvent
   canWriteQueue: AsyncQueue[(CANFrame, Future[void])]
 
+  noBufferSpaceHasWarned: bool
+
 using self: CanBridgeNode
 
 func logger(self): Logger =
@@ -59,8 +100,10 @@ func logger(self): Logger =
 proc newCanBridgeNode(): CanBridgeNode =
   new result
   result.node = newNode("can_bridge")
-  result.params = result.node.createParamServer()
+  result.buf = newTfBuffer(result.node)
+  result.params = result.node.createObjParamServer(DefaultParameter)
   result.cmdVelSub = result.node.createSubscription(Twist, "cmd_vel", SystemDefaultQoS)
+  result.cmdVelStampedSub = result.node.createSubscription(TwistStamped, "cmd_vel_stamped", SystemDefaultQoS)
   result.cmdVelFilteredPub = result.node.createPublisher(Twist, "cmd_vel_filtered", SensorDataQoS)
   result.unwindSrv = result.node.createService(Trigger, "unwind", ServiceDefaultQoS)
   result.donfanCmdSub = result.node.createSubscription(Int8, "donfan_cmd", SystemDefaultQoS)
@@ -80,40 +123,10 @@ proc newCanBridgeNode(): CanBridgeNode =
   result.canOpenedEvent = newAsyncEvent()
   result.canWriteQueue = newAsyncQueue[(CANFrame, Future[void])]()
 
-  with result.params:
-    declare("drive.kp", 1.0)
-    declare("drive.ki", 4.0)
-    declare("drive.kd", 0.0)
-    declare("drive.max", 20.0)
-    declare("drive.min", -20.0)
-    declare("drive.use_velocity_for_d_term", false)
-    declare("drive.antiwindup", true)
-
-    declare("steer.kp", 2.0)
-    declare("steer.ki", 0.8)
-    declare("steer.kd", 0.0)
-    declare("steer.max", 0.9)
-    declare("steer.min", -0.9)
-    declare("steer.use_velocity_for_d_term", true)
-    declare("steer.antiwindup", false)
-
-    declare("steer0.offset", 0.0)
-    declare("steer1.offset", 0.0)
-    declare("steer2.offset", 0.0)
-    declare("steer3.offset", 0.0)
-
-    declare("can_id", 200)
-    declare("can_interface", "can0")
-    declare("command_lifespan_sec", 1.0)
-    declare("linear_accel_limit", 10.0)
-    declare("angular_accel_limit", 10.0)
-
-    endDeclaration()
-
 proc sendCmd*(self; cmd: RoboCmd): Future[void] =
   let cmdData = RoboCmdData(msg: cmd)
   let frame = CANFrame(
-    id: self.params.get("can_id").intVal.CANId,
+    id: self.params.value.can_id.CANId,
     kind: Data, format: Standard, len: 8, data: cmdData.bytes
   )
   result = newFuture[void]("sendCmd")
@@ -121,13 +134,13 @@ proc sendCmd*(self; cmd: RoboCmd): Future[void] =
   # await self.can.write(frame)
 
 proc sendParameter(self; p: SetParamObj) {.async.} =
+  self.logger.info "sending parameter ", p
   let cmd = RoboCmd(
     kind: SetParam,
     setParam: p
   )
   self.roboParamEventQueue.clear()
   while true:
-    echo cmd
     await self.sendCmd(cmd)
     let fut = self.roboParamEventQueue.get()
     if await withTimeout(fut, 100.milliseconds):
@@ -136,6 +149,8 @@ proc sendParameter(self; p: SetParamObj) {.async.} =
         break
       else:
         self.logger.warn "failed to sync parameter ", p.id
+    else:
+      fut.cancel()
 
 proc syncParameter(self; name: string, value: ParamValue) {.async.} =
   # TODO: refactor this shit
@@ -144,7 +159,7 @@ proc syncParameter(self; name: string, value: ParamValue) {.async.} =
     "max": 3, "min": 4, "antiwindup": 5, "use_velocity_for_d_term": 6}.toTable
   let s = name.split(".")
   if s.len < 1: return
-  self.logger.info "sending parameter ", name
+  # self.logger.info "sending parameter ", name
   if name.startsWith("drive.") or name.startsWith("steer."):
     if s.len != 2: return
     if s[1] notin pidParamOffsetLut: return
@@ -177,11 +192,12 @@ proc syncParameter(self; name: string, value: ParamValue) {.async.} =
       value: RoboParamValue(kind: Float, floatVal: value.doubleVal)))
 
 proc paramEventLoop(self) {.async.} =
+  let key = self.params.eventQueue.register()
   while true:
-    for ev in await self.params.waitForUpdate():
-      if ev.kind != Changed: continue
-      echo ev
-      await self.syncParameter(ev.name, ev.param)
+    for ev in await self.params.eventQueue.waitEvents(key):
+      if ev.kind == Changed:
+        echo ev
+        await self.syncParameter(ev.name, ev.param)
 
 proc cmdSubLoop(self) {.async.} =
   while true:
@@ -190,6 +206,19 @@ proc cmdSubLoop(self) {.async.} =
     self.targetLinearVel.x = cmd.linear.x
     self.targetLinearVel.y = cmd.linear.y
     self.targetAngVel = cmd.angular.z
+
+proc cmdStampedSubLoop(self) {.async.} =
+  while true:
+    let cmd = await self.cmdVelStampedSub.recv()
+    let tr = self.buf.lookupTransform(FrameId"base_footprint", cmd.header.frameId.FrameId, TimePointZero)
+    if tr.isErr: return
+    let tf = tr.tryValue().transform.to(Transform3d)
+    let linear = tf.xform cmd.twist.linear.to(Vector3d)
+    let angular = tf.xform cmd.twist.angular.to(Vector3d)
+    self.lastCmdTime = Moment.now()
+    self.targetLinearVel.x = linear.x
+    self.targetLinearVel.y = linear.y
+    self.targetAngVel = angular.z
 
 proc largeWheelCmdSubLoop(self) {.async.} =
   while true:
@@ -221,7 +250,7 @@ proc expanderCmdSubLoop(self) {.async.} =
   while true:
     let cmd = await self.expanderLengthSub.recv()
     self.logger.info "expand: ", cmd.data
-    await self.sendCmd(RoboCmd(kind: SetExpanderLength, setExpanderLength: SetExpanderLengthObj(length: int16(cmd.data / 1000.0))))
+    await self.sendCmd(RoboCmd(kind: SetExpanderLength, setExpanderLength: SetExpanderLengthObj(length: int16(cmd.data * 1000.0))))
 
 proc collectorCmdSubLoop(self) {.async.} =
   while true:
@@ -234,24 +263,23 @@ proc armLengthSubLoop(self) {.async.} =
     let cmd = await self.armLengthSub.recv()
     self.logger.info "arm length: ", cmd.data
     await self.sendCmd(
-      RoboCmd(kind: SetArmLength, setArmLength: SetArmLengthObj(length: int16(cmd.data / 1000.0))))
+      RoboCmd(kind: SetArmLength, setArmLength: SetArmLengthObj(length: int16(cmd.data * 1000.0))))
 
 proc armAngleSubLoop(self) {.async.} =
   while true:
     let cmd = await self.armAngleSub.recv()
     self.logger.info "arm angle: ", cmd.data
     await self.sendCmd(
-      RoboCmd(kind: SetArmAngle, setArmAngle: SetArmAngleObj(angle: int16(cmd.data / 1000.0))))
+      RoboCmd(kind: SetArmAngle, setArmAngle: SetArmAngleObj(angle: int16(cmd.data * 1000.0))))
 
 proc openCan(self) {.async.} =
   while true:
     if self.can == nil or not self.can.isOpened:
-      let name = self.params.get("can_interface").strVal
+      let name = self.params.value.can_interface
       try:
         self.can = createCANSocket(name)
         self.canOpenedEvent.fire()
         self.logger.info fmt"can interface '{name}' opened"
-        return
       except CatchableError:
         self.logger.warn fmt"failed to open '{name}'"
         if self.node.context.isShuttingDown:
@@ -266,12 +294,13 @@ proc canReadLoop(self) {.async.} =
       try:
         frame = await self.can.read()
         break
-      except OSError:
+      except OSError as e:
+        self.logger.warn "Read error: ", e.msg
         self.can.close()
         self.canOpenedEvent.clear()
 
-    if frame.id != (self.params.get("can_id").intVal + 1).CANId: continue
-    if frame.kind != Data or frame.format != Standard or frame.len != 8: continue
+    if frame.id != (self.params.value.can_id + 1).CANId: continue
+    if frame.kind != Data or frame.format != Standard or frame.len < sizeof(RoboFeedback): continue
     var fb = RoboFeedback()
     copyMem(addr fb, addr frame.data, sizeof(fb))
     echo fb
@@ -308,10 +337,17 @@ proc canWriteLoop(self) {.async.} =
       try:
         await self.can.write(frame)
         fut.complete()
+        self.noBufferSpaceHasWarned = false 
         break
-      except OSError:
-        self.can.close()
-        self.canOpenedEvent.clear()
+      except OSError as e:
+        if e.errorCode.OSErrorCode == ENOBUFS:
+          if not self.noBufferSpaceHasWarned:
+            self.logger.warn "Write error: No buffer space available"
+            self.noBufferSpaceHasWarned = true
+        else:
+          self.logger.warn "Write error: ", e.msg
+          self.can.close()
+          self.canOpenedEvent.clear()
 
 proc updateVelocity(self; dt: Duration) =
   let dtSec = dt.nanoseconds.float * 1e-9
@@ -320,7 +356,7 @@ proc updateVelocity(self; dt: Duration) =
     let
       tgt = self.targetLinearVel
       cur = self.presentLinearVel
-      lim = self.params.get("linear_accel_limit").doubleVal * dtSec
+      lim = self.params.value.linear_accel_limit * dtSec
     if tgt.dist(cur) > lim:
       let dir = normalize(tgt - cur)
       self.presentLinearVel += dir * lim
@@ -331,7 +367,7 @@ proc updateVelocity(self; dt: Duration) =
     let
       tgt = self.targetAngVel
       cur = self.presentAngVel
-      lim = self.params.get("angular_accel_limit").doubleVal * dtSec
+      lim = self.params.value.angular_accel_limit * dtSec
     if abs(tgt - cur) > lim:
       let dir = sign(tgt - cur)
       self.presentAngVel += dir * lim
@@ -360,7 +396,7 @@ proc velCmdLoop(self) {.async.} =
     let now = Moment.now()
     let dt = now - prevLoopRun
     prevLoopRun = now
-    let cmdLifespan = self.params.get("command_lifespan_sec").doubleVal.toDurationSec()
+    let cmdLifespan = self.params.value.command_lifespan_sec.toDurationSec()
     if now - self.lastCmdTime > cmdLifespan:
       self.targetLinearVel = Vec2.zeroDefault
       self.targetAngVel = 0.0
@@ -375,25 +411,8 @@ proc roboSetupLoop(self) {.async.} =
     case self.roboState
     of Configuring:
       self.logger.info "setting up"
-      const params = [
-        "drive.kp",
-        "drive.ki",
-        "drive.kd",
-        "drive.max",
-        "drive.min",
-        "drive.antiwindup",
-        "drive.use_velocity_for_d_term",
-        "steer.kp",
-        "steer.ki",
-        "steer.kd",
-        "steer.max",
-        "steer.min",
-        "steer.antiwindup",
-        "steer.use_velocity_for_d_term",
-      ]
-      for toSync in params:
-        echo toSync
-        await self.syncParameter(toSync, self.params.get(toSync))
+      for toSync in self.params.server.names:
+        await self.syncParameter(toSync, self.params.server.get(toSync))
       await self.sendCmd(RoboCmd(kind: ACTIVATE))
       await self.roboStateEvent.wait()
       self.roboStateEvent.clear()
@@ -414,6 +433,7 @@ proc run(self) {.async.} =
     self.openCan(),
     self.paramEventLoop(),
     self.cmdSubLoop(),
+    self.cmdStampedSubLoop(),
     self.largeWheelCmdSubLoop(),
     self.unwindSrvLoop(),
     self.donfanCmdSubLoop(),

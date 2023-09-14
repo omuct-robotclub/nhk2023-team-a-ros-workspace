@@ -66,6 +66,7 @@ else:
 proc close*(self: CANSocket) =
   if self.isOpened:
     self.handle.close()
+    self.handle = osInvalidSocket
     self.isOpened = false
 
 func isOpened*(self: CANSocket): bool =
@@ -78,6 +79,8 @@ func getHandle*(self: CANSocket): SocketHandle =
 proc createCANSocket*(name: string): CANSocket =
   new result
   result.handle = createNativeSocket(PF_CAN, posix.SOCK_RAW, CAN_RAW)
+  if result.handle == osInvalidSocket:
+    raiseOsError osLastError()
   let ifindex = if_nametoindex(name)
   if ifindex == 0:
     raise newException(IOError):
@@ -120,12 +123,12 @@ proc waitReadable(fd: AsyncFD): Future[void] =
     if res.isErr():
       fut.fail(newException(AsyncError, osErrorMsg(res.error)))
       return fut
-  addReader2(fd,
+  tryGet addReader2(fd,
     proc(udata: pointer) =
       fut.complete()
       discard removeReader2(fd)
     , nil
-  ).tryGet()
+  )
 
 proc waitWritable(fd: AsyncFD): Future[void] =
   result = newFuture[void]("waitWritable")
@@ -139,12 +142,12 @@ proc waitWritable(fd: AsyncFD): Future[void] =
     if res.isErr():
       fut.fail(newException(AsyncError, osErrorMsg(res.error)))
       return fut
-  addWriter2(fd,
+  discard addWriter2(fd,
     proc(udata: pointer) =
       fut.complete()
       discard removeWriter2(fd)
     , nil
-  ).tryGet()
+  )
 
 proc read*(self: CANSocket): Future[CANFrame] {.async.} =
   await self.handle.AsyncFD.waitReadable()
