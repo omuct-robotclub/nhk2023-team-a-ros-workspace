@@ -6,7 +6,7 @@
     <param from="$(find-pkg-share bringup)/config/can_bridge.yaml" />
   </node>
 
-  <!-- <node unless="$(var manual)" pkg="pfloc" exec="pfloc" /> -->
+  <node unless="$(var manual)" pkg="pfloc" exec="pfloc" />
 
   <!-- <node unless="$(var manual)" pkg="emcl2" exec="emcl2_node">
     <param name="sensor_reset" value="false" />

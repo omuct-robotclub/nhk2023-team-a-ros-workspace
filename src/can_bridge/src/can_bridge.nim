@@ -90,6 +90,8 @@ type CanBridgeNode = ref object
   canOpenedEvent: AsyncEvent
   canWriteQueue: AsyncQueue[(CANFrame, Future[void])]
 
+  velocityUpdatedEvent: AsyncEvent
+
   noBufferSpaceHasWarned: bool
 
 using self: CanBridgeNode
@@ -122,6 +124,8 @@ proc newCanBridgeNode(): CanBridgeNode =
 
   result.canOpenedEvent = newAsyncEvent()
   result.canWriteQueue = newAsyncQueue[(CANFrame, Future[void])]()
+
+  result.velocityUpdatedEvent = newAsyncEvent()
 
 proc sendCmd*(self; cmd: RoboCmd): Future[void] =
   let cmdData = RoboCmdData(msg: cmd)
@@ -211,7 +215,7 @@ proc cmdStampedSubLoop(self) {.async.} =
   while true:
     let cmd = await self.cmdVelStampedSub.recv()
     let tr = self.buf.lookupTransform(FrameId"base_footprint", cmd.header.frameId.FrameId, TimePointZero)
-    if tr.isErr: return
+    if tr.isErr: continue
     let tf = tr.tryValue().transform.to(Transform3d)
     let linear = tf.xform cmd.twist.linear.to(Vector3d)
     let angular = tf.xform cmd.twist.angular.to(Vector3d)
@@ -378,16 +382,19 @@ proc updateVelocity(self; dt: Duration) =
       linear: Vector3(x: self.presentLinearVel.x, y: self.presentLinearVel.y),
       angular: Vector3(z: self.presentAngVel)))
 
-proc writeVelocity(self) {.async.} =
-  let cmd = RoboCmd(
-    kind: SetTargetVelocity,
-    setTargetVelocity: SetTargetVelocityObj(
-      vx: int16 self.presentLinearVel.x * 1000,
-      vy: int16 self.presentLinearVel.y * 1000,
-      angVel: int16 self.presentAngVel * 1000,
+proc writeVelocityLoop(self) {.async.} =
+  while true:
+    await self.velocityUpdatedEvent.wait()
+    self.velocityUpdatedEvent.clear()
+    let cmd = RoboCmd(
+      kind: SetTargetVelocity,
+      setTargetVelocity: SetTargetVelocityObj(
+        vx: int16 self.presentLinearVel.x * 1000,
+        vy: int16 self.presentLinearVel.y * 1000,
+        angVel: int16 self.presentAngVel * 1000,
+      )
     )
-  )
-  await self.sendCmd(cmd)
+    await self.sendCmd(cmd)
 
 proc velCmdLoop(self) {.async.} =
   var prevLoopRun = Moment.now() - 10.milliseconds
@@ -401,7 +408,7 @@ proc velCmdLoop(self) {.async.} =
       self.targetLinearVel = Vec2.zeroDefault
       self.targetAngVel = 0.0
     self.updateVelocity(dt)
-    await self.writeVelocity()
+    self.velocityUpdatedEvent.fire()
     await sleep
 
 proc roboSetupLoop(self) {.async.} =
@@ -442,6 +449,7 @@ proc run(self) {.async.} =
     self.armLengthSubLoop(),
     self.armAngleSubLoop(),
     self.velCmdLoop(),
+    self.writeVelocityLoop(),
     self.roboSetupLoop(),
     self.canReadLoop(),
     self.canWriteLoop(),
