@@ -97,7 +97,7 @@ struct Command {
   } PROTOCOL_PACKED;
 
   struct SetArmAngle {
-    int16_t angle; // 角度 初期位置が0 前方向が+ [mrad]
+    int16_t angle; // 角度 水平が0 前方向が+ [mrad]
   } PROTOCOL_PACKED;
 
   struct SetArmLength {
