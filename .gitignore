@@ -10,3 +10,4 @@
 __pycache__
 
 rosbag2*
+param_dump_*.yaml
