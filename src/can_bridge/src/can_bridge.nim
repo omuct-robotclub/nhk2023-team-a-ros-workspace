@@ -39,6 +39,9 @@ type
 
     drive: PidParameters
     steer: PidParameters
+    arm_angle: PidParameters
+    arm_length: PidParameters
+    expander: PidParameters
     steer0, steer1, steer2, steer3: SteerParameters
 
 const DefaultParameter = Parameters(
@@ -145,15 +148,20 @@ proc sendParameter(self; p: SetParamObj) {.async.} =
   )
   self.roboParamEventQueue.clear()
   while true:
+    self.logger.info "sending set parameter request"
     await self.sendCmd(cmd)
+    self.logger.info "set parameter request sent"
     let fut = self.roboParamEventQueue.get()
+    self.logger.info "waiting for response"
     if await withTimeout(fut, 100.milliseconds):
       let ev = fut.read()
       if ev.id == p.id:
+        self.logger.info "set parameter success"
         break
       else:
         self.logger.warn "failed to sync parameter ", p.id
     else:
+      self.logger.info "response timed out"
       fut.cancel()
 
 proc syncParameter(self; name: string, value: ParamValue) {.async.} =
@@ -164,12 +172,21 @@ proc syncParameter(self; name: string, value: ParamValue) {.async.} =
   let s = name.split(".")
   if s.len < 1: return
   # self.logger.info "sending parameter ", name
-  if name.startsWith("drive.") or name.startsWith("steer."):
+  if name.startsWith("drive.") or
+      name.startsWith("steer.") or
+      name.startsWith("arm_angle.") or
+      name.startsWith("arm_length.") or
+      name.startsWith("expander."):
     if s.len != 2: return
     if s[1] notin pidParamOffsetLut: return
     var paramId =
-      if s[0] == "drive": DRIVE_KP
-      else: STEER_KP
+      case s[0]
+      of "drive": DRIVE_KP
+      of "steer": STEER_KP
+      of "arm_angle": ARM_ANGLE_KP
+      of "arm_length": ARM_LENGTH_KP
+      of "expander": EXPANDER_KP
+      else: raiseAssert "unreachable"
     inc paramId, pidParamOffsetLut[s[1]]
     var paramValue: RoboParamValue
     if s[1] == "antiwindup" or s[1] == "use_velocity_for_d_term":
@@ -217,8 +234,8 @@ proc cmdStampedSubLoop(self) {.async.} =
     let tr = self.buf.lookupTransform(FrameId"base_footprint", cmd.header.frameId.FrameId, TimePointZero)
     if tr.isErr: continue
     let tf = tr.tryValue().transform.to(Transform3d)
-    let linear = tf.xform cmd.twist.linear.to(Vector3d)
-    let angular = tf.xform cmd.twist.angular.to(Vector3d)
+    let linear = tf.basis * cmd.twist.linear.to(Vector3d)
+    let angular = cmd.twist.angular.to(Vector3d)
     self.lastCmdTime = Moment.now()
     self.targetLinearVel.x = linear.x
     self.targetLinearVel.y = linear.y
@@ -394,6 +411,7 @@ proc writeVelocityLoop(self) {.async.} =
         angVel: int16 self.presentAngVel * 1000,
       )
     )
+    # self.logger.info cmd
     await self.sendCmd(cmd)
 
 proc velCmdLoop(self) {.async.} =
@@ -421,8 +439,10 @@ proc roboSetupLoop(self) {.async.} =
       for toSync in self.params.server.names:
         await self.syncParameter(toSync, self.params.server.get(toSync))
       await self.sendCmd(RoboCmd(kind: ACTIVATE))
+      self.logger.info "activating..."
       await self.roboStateEvent.wait()
       self.roboStateEvent.clear()
+      self.logger.info "activated!"
     of Running:
       discard
     of Unknown:
