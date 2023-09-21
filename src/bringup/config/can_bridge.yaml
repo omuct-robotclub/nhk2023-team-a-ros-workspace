@@ -3,9 +3,9 @@
     angular_accel_limit: 49.9999999999968
     arm_angle:
       antiwindup: true
-      kd: 0.101152718804994
+      kd: 0.0429394724786192
       ki: 0.0
-      kp: 1.15850127893695
+      kp: 0.61449832143211
       max: 0.302593620687272
       min: -0.30144099552381
       use_velocity_for_d_term: false
