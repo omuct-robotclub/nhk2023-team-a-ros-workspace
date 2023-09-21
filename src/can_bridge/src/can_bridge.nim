@@ -403,16 +403,16 @@ proc writeVelocityLoop(self) {.async.} =
   while true:
     await self.velocityUpdatedEvent.wait()
     self.velocityUpdatedEvent.clear()
-    let cmd = RoboCmd(
-      kind: SetTargetVelocity,
-      setTargetVelocity: SetTargetVelocityObj(
-        vx: int16 self.presentLinearVel.x * 1000,
-        vy: int16 self.presentLinearVel.y * 1000,
-        angVel: int16 self.presentAngVel * 1000,
+    if self.can != nil and self.can.isOpened:
+      let cmd = RoboCmd(
+        kind: SetTargetVelocity,
+        setTargetVelocity: SetTargetVelocityObj(
+          vx: int16 self.presentLinearVel.x * 1000,
+          vy: int16 self.presentLinearVel.y * 1000,
+          angVel: int16 self.presentAngVel * 1000,
+        )
       )
-    )
-    # self.logger.info cmd
-    await self.sendCmd(cmd)
+      await self.sendCmd(cmd)
 
 proc velCmdLoop(self) {.async.} =
   var prevLoopRun = Moment.now() - 10.milliseconds
