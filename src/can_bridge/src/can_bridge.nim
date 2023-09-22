@@ -349,6 +349,8 @@ proc canReadLoop(self) {.async.} =
         if self.roboState != Running:
           self.roboState = Running
           self.roboStateEvent.fire()
+    of STEER_UNIT_STATE:
+      discard
 
 proc canWriteLoop(self) {.async.} =
   while true:

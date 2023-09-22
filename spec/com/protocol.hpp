@@ -178,6 +178,7 @@ struct Feedback {
     HEARTBEAT,
     STEER_UNWIND_DONE,
     CURRENT_STATE,
+    STEER_UNIT_STATE,
   };
 
   Tag tag;
@@ -205,6 +206,13 @@ struct Feedback {
     } state;
   } PROTOCOL_PACKED;
 
+  struct SteerUnitState {
+    uint8_t index; // ステアの番号 0:左前 1:左後ろ 2:右後ろ 3:右前
+    int16_t velocity; // 速度　[mrad/s]
+    int16_t current; // 電流 [mA]
+    int16_t angle; // ステア角 0~2π [mrad]
+  } PROTOCOL_PACKED;
+
   union {
     // パラメータのイベント
     // パラメータが設定されたときに送る
@@ -217,6 +225,8 @@ struct Feedback {
     Odometry odometry;
 
     CurrentState current_state;
+
+    SteerUnitState steer_unit_state;
   };
 } PROTOCOL_PACKED;
 

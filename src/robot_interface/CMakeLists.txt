@@ -16,6 +16,7 @@ find_package(builtin_interfaces REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 set(interface_files
+  "msg/SteerUnitStates.msg"
   "srv/Unwind.srv"
 )
 rosidl_generate_interfaces(${PROJECT_NAME}

@@ -131,7 +131,8 @@ type
     ODOMETRY,
     HEARTBEAT,
     STEER_UNWIND_DONE,
-    CURRENT_STATE
+    CURRENT_STATE,
+    STEER_UNIT_STATE,
 
   ParamEventObj* {.packed.} = object
     id*: RoboParamId
@@ -150,6 +151,10 @@ type
 
   CurrentStateObj* {.packed.} = object
     state*: CurrentStateEnum
+  
+  SteerUnitStateObj* {.packed.} = object
+    index: uint8
+    velocity, current, angle: int16
 
   RoboFeedback* {.packed.} = object
     case kind*: RoboFeedbackKind
@@ -159,6 +164,7 @@ type
     of HEARTBEAT: discard
     of STEER_UNWIND_DONE: discard
     of CURRENT_STATE: currentState*: CurrentStateObj
+    of STEER_UNIT_STATE: steerUnitState*: SteerUnitStateObj
 
   RoboFeedbackData* {.union.} = object
     bytes*: array[8, byte]
