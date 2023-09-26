@@ -9,7 +9,7 @@
 
   <depend>geometry_msgs</depend>
   <depend>diagnostic_msgs</depend>
-  <!-- <depend>robot_interface</depend> -->
+  <depend>robot_interface</depend>
 
   <export>
     <build_type>ament_nimble</build_type>

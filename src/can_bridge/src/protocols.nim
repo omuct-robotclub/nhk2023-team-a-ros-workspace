@@ -153,8 +153,8 @@ type
     state*: CurrentStateEnum
   
   SteerUnitStateObj* {.packed.} = object
-    index: uint8
-    velocity, current, angle: int16
+    index*: uint8
+    velocity*, current*, angle*: int16
 
   RoboFeedback* {.packed.} = object
     case kind*: RoboFeedbackKind

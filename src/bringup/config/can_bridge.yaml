@@ -1,11 +1,11 @@
 /can_bridge:
   ros__parameters:
-    angular_accel_limit: 49.9999999999968
+    angular_accel_limit: 1000.0
     arm_angle:
       antiwindup: true
-      kd: 0.0429394724786192
+      kd: 0.101152718804994
       ki: 0.0
-      kp: 0.61449832143211
+      kp: 1.15850127893695
       max: 0.302593620687272
       min: -0.30144099552381
       use_velocity_for_d_term: false
@@ -13,7 +13,7 @@
       antiwindup: true
       kd: 0.0
       ki: 0.0
-      kp: 30.0
+      kp: 6.793
       max: 0.9
       min: -0.9
       use_velocity_for_d_term: true
@@ -36,7 +36,7 @@
       max: 0.467665952896184
       min: -0.68822269806921
       use_velocity_for_d_term: true
-    linear_accel_limit: 3.56714624866769
+    linear_accel_limit: 1000.0
     steer:
       antiwindup: true
       kd: 0.0432069134086172

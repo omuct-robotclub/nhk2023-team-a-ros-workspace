@@ -1,7 +1,7 @@
 import rclnim
 import rclnim/chronossupport
 import chronos
-import std/[options, strformat, with, strutils, tables, oserrors]
+import std/[options, strformat, strutils, tables, oserrors]
 import ./socketcan
 import vmath
 import ./protocols
@@ -13,6 +13,7 @@ importInterface geometry_msgs/msg/[twist, twist_stamped, vector3]
 importInterface nav_msgs/msg/odometry, Odometry as OdometryMsg
 importInterface std_msgs/msg/[int8 as int8_msg, float64 as float64_msg, bool as bool_msg], bool_msg.Bool as BoolMsg
 importInterface std_srvs/srv/trigger
+importInterface robot_interface/msg/steer_unit_states
 
 func toDurationSec(f: float): Duration =
   int(f*1e9).nanoseconds
@@ -44,6 +45,8 @@ type
     expander: PidParameters
     steer0, steer1, steer2, steer3: SteerParameters
 
+    lock_arm_angle: bool
+
 const DefaultParameter = Parameters(
   can_id: 200,
   can_interface: "can0",
@@ -56,6 +59,7 @@ const DefaultParameter = Parameters(
   steer: PidParameters(
     kp: 2.0, ki: 0.8, kd: 0.0, max: 0.9, min: -0.9, use_velocity_for_d_term: true, antiwindup: false
   ),
+  lock_arm_angle: false
 )
 
 
@@ -83,12 +87,14 @@ type CanBridgeNode = ref object
   largeWheelCmdSub: Subscription[Float64]
 
   odomPub: Publisher[OdometryMsg]
+  steerUnitStatePub: Publisher[SteerUnitStates]
 
   roboParamEventQueue: AsyncQueue[ParamEventObj]
   roboGetParamResponseQueue: AsyncQueue[GetParamResponseObj]
   roboSteerUnwindDoneQueue: AsyncQueue[bool]
   roboState: RoboState
   roboStateEvent: AsyncEvent
+  steerStates: SteerUnitStates
 
   canOpenedEvent: AsyncEvent
   canWriteQueue: AsyncQueue[(CANFrame, Future[void])]
@@ -118,26 +124,33 @@ proc newCanBridgeNode(): CanBridgeNode =
   result.armAngleSub = result.node.createSubscription(Float64, "arm_angle", SystemDefaultQoS)
   result.largeWheelCmdSub = result.node.createSubscription(Float64, "large_wheel_cmd", SystemDefaultQoS)
   result.odomPub = result.node.createPublisher(OdometryMsg, "odom", SensorDataQoS)
+  result.steerUnitStatePub = result.node.createPublisher(SteerUnitStates, "steer_states", SensorDataQoS)
 
-  result.roboParamEventQueue = newAsyncQueue[ParamEventObj]()
-  result.roboGetParamResponseQueue = newAsyncQueue[GetParamResponseObj]()
-  result.roboSteerUnwindDoneQueue = newAsyncQueue[bool]()
+  result.roboParamEventQueue = newAsyncQueue[ParamEventObj](1000)
+  result.roboGetParamResponseQueue = newAsyncQueue[GetParamResponseObj](1000)
+  result.roboSteerUnwindDoneQueue = newAsyncQueue[bool](1000)
   result.roboState = Unknown
   result.roboStateEvent = newAsyncEvent()
+  result.steerStates = SteerUnitStates(
+    angles: @[0, 0, 0, 0],
+    currents: @[0, 0, 0, 0],
+    velocities: @[0, 0, 0, 0]
+  )
 
   result.canOpenedEvent = newAsyncEvent()
-  result.canWriteQueue = newAsyncQueue[(CANFrame, Future[void])]()
+  result.canWriteQueue = newAsyncQueue[(CANFrame, Future[void])](1000)
 
   result.velocityUpdatedEvent = newAsyncEvent()
 
-proc sendCmd*(self; cmd: RoboCmd): Future[void] =
+proc sendCmd*(self; cmd: RoboCmd) {.async.} =
   let cmdData = RoboCmdData(msg: cmd)
   let frame = CANFrame(
     id: self.params.value.can_id.CANId,
     kind: Data, format: Standard, len: 8, data: cmdData.bytes
   )
-  result = newFuture[void]("sendCmd")
-  self.canWriteQueue.putNoWait((frame, result))
+  let fut = newFuture[void]("sendCmd")
+  await self.canWriteQueue.put((frame, fut))
+  await fut
   # await self.can.write(frame)
 
 proc sendParameter(self; p: SetParamObj) {.async.} =
@@ -253,11 +266,6 @@ proc unwindSrvLoop(self) {.async.} =
     await self.sendCmd(RoboCmd(kind: UNWIND_STEER))
     sender.send(TriggerResponse(success: true))
 
-    # let success = await self.roboSteerUnwindDoneQueue.get()
-    # echo "waiting queue"
-    # echo "got"
-    # self.logger.info "unwinding done"
-
 proc donfanCmdSubLoop(self) {.async.} =
   while true:
     let cmd = await self.donfanCmdSub.recv()
@@ -289,9 +297,12 @@ proc armLengthSubLoop(self) {.async.} =
 proc armAngleSubLoop(self) {.async.} =
   while true:
     let cmd = await self.armAngleSub.recv()
-    self.logger.info "arm angle: ", cmd.data
-    await self.sendCmd(
-      RoboCmd(kind: SetArmAngle, setArmAngle: SetArmAngleObj(angle: int16(cmd.data * 1000.0))))
+    if self.params.value.lock_arm_angle:
+      self.logger.warn "An arm angle command received but it's locked."
+    else:
+      self.logger.info "arm angle: ", cmd.data
+      await self.sendCmd(
+        RoboCmd(kind: SetArmAngle, setArmAngle: SetArmAngleObj(angle: int16(cmd.data * 1000.0))))
 
 proc openCan(self) {.async.} =
   while true:
@@ -340,7 +351,6 @@ proc canReadLoop(self) {.async.} =
     of HEARTBEAT: discard
     of STEER_UNWIND_DONE: await self.roboSteerUnwindDoneQueue.put(true)
     of CURRENT_STATE:
-      # self.logger.info fb.currentState.state
       case fb.currentState.state
       of Configuring:
         self.roboState = Configuring
@@ -350,7 +360,11 @@ proc canReadLoop(self) {.async.} =
           self.roboState = Running
           self.roboStateEvent.fire()
     of STEER_UNIT_STATE:
-      discard
+      doAssert 0 <= fb.steerUnitState.index and fb.steerUnitState.index < 4
+      let idx = fb.steerUnitState.index
+      self.steerStates.velocities[idx] = fb.steerUnitState.velocity.float64 * 1e-2
+      self.steerStates.currents[idx] = fb.steerUnitState.current.float64 * 1e-3
+      self.steerStates.angles[idx] = fb.steerUnitState.angle.float64 * 1e-3
 
 proc canWriteLoop(self) {.async.} =
   while true:
@@ -375,27 +389,29 @@ proc canWriteLoop(self) {.async.} =
 proc updateVelocity(self; dt: Duration) =
   let dtSec = dt.nanoseconds.float * 1e-9
 
-  block:
-    let
-      tgt = self.targetLinearVel
-      cur = self.presentLinearVel
-      lim = self.params.value.linear_accel_limit * dtSec
-    if tgt.dist(cur) > lim:
-      let dir = normalize(tgt - cur)
-      self.presentLinearVel += dir * lim
-    else:
-      self.presentLinearVel = tgt
+  self.presentLinearVel = self.targetLinearVel
+  self.presentAngVel = self.targetAngVel
+  # block:
+  #   let
+  #     tgt = self.targetLinearVel
+  #     cur = self.presentLinearVel
+  #     lim = self.params.value.linear_accel_limit * dtSec
+  #   if tgt.dist(cur) > lim:
+  #     let dir = normalize(tgt - cur)
+  #     self.presentLinearVel += dir * lim
+  #   else:
+  #     self.presentLinearVel = tgt
 
-  block:
-    let
-      tgt = self.targetAngVel
-      cur = self.presentAngVel
-      lim = self.params.value.angular_accel_limit * dtSec
-    if abs(tgt - cur) > lim:
-      let dir = sign(tgt - cur)
-      self.presentAngVel += dir * lim
-    else:
-      self.presentAngVel = tgt
+  # block:
+  #   let
+  #     tgt = self.targetAngVel
+  #     cur = self.presentAngVel
+  #     lim = self.params.value.angular_accel_limit * dtSec
+  #   if abs(tgt - cur) > lim:
+  #     let dir = sign(tgt - cur)
+  #     self.presentAngVel += dir * lim
+  #   else:
+  #     self.presentAngVel = tgt
   
   self.cmdVelFilteredPub.publish(Twist(
       linear: Vector3(x: self.presentLinearVel.x, y: self.presentLinearVel.y),
@@ -430,6 +446,11 @@ proc velCmdLoop(self) {.async.} =
     self.updateVelocity(dt)
     self.velocityUpdatedEvent.fire()
     await sleep
+
+proc steerStatePublishLoop(self) {.async.} =
+  while true:
+    self.steerUnitStatePub.publish(self.steerStates)
+    await sleepAsync 33.milliseconds
 
 proc roboSetupLoop(self) {.async.} =
   while true:
@@ -472,6 +493,7 @@ proc run(self) {.async.} =
     self.armAngleSubLoop(),
     self.velCmdLoop(),
     self.writeVelocityLoop(),
+    self.steerStatePublishLoop(),
     self.roboSetupLoop(),
     self.canReadLoop(),
     self.canWriteLoop(),
