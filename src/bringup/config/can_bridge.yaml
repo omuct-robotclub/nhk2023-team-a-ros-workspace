@@ -3,20 +3,20 @@
     angular_accel_limit: 1000.0
     arm_angle:
       antiwindup: true
-      kd: 0.101152718804994
+      kd: 0.0950552105816192
       ki: 0.0
-      kp: 1.15850127893695
+      kp: 0.700912154783148
       max: 0.302593620687272
       min: -0.30144099552381
       use_velocity_for_d_term: false
     arm_length:
       antiwindup: true
-      kd: 0.0
+      kd: 0.211233790241128
       ki: 0.0
-      kp: 6.793
-      max: 0.9
-      min: -0.9
-      use_velocity_for_d_term: true
+      kp: 28.4685556024366
+      max: 0.813767500188556
+      min: -0.80748917028868
+      use_velocity_for_d_term: false
     can_id: 200
     can_interface: can0
     command_lifespan_sec: 1.0
@@ -37,6 +37,7 @@
       min: -0.68822269806921
       use_velocity_for_d_term: true
     linear_accel_limit: 1000.0
+    lock_arm_angle: false
     steer:
       antiwindup: true
       kd: 0.0432069134086172
