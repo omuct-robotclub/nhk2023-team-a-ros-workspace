@@ -159,8 +159,8 @@ proc sendParameter(self; p: SetParamObj) {.async.} =
     kind: SetParam,
     setParam: p
   )
-  self.roboParamEventQueue.clear()
   while true:
+    self.roboParamEventQueue.clear()
     self.logger.info "sending set parameter request"
     await self.sendCmd(cmd)
     self.logger.info "set parameter request sent"
@@ -173,6 +173,7 @@ proc sendParameter(self; p: SetParamObj) {.async.} =
         break
       else:
         self.logger.warn "failed to sync parameter ", p.id
+        sleepAsync 100.milliseconds
     else:
       self.logger.info "response timed out"
       fut.cancel()
@@ -371,20 +372,22 @@ proc canWriteLoop(self) {.async.} =
     let (frame, fut) = await self.canWriteQueue.get()
     while true:
       await self.canOpenedEvent.wait()
-      try:
-        await self.can.write(frame)
-        fut.complete()
-        self.noBufferSpaceHasWarned = false 
-        break
-      except OSError as e:
-        if e.errorCode.OSErrorCode == ENOBUFS:
+      let err = self.can.write(frame)
+      if err.isErr:
+        let e = err.tryError()
+        if e.OSErrorCode == ENOBUFS:
           if not self.noBufferSpaceHasWarned:
             self.logger.warn "Write error: No buffer space available"
             self.noBufferSpaceHasWarned = true
+          await sleepAsync 1000.milliseconds
         else:
-          self.logger.warn "Write error: ", e.msg
+          self.logger.warn "Write error: ", e
           self.can.close()
           self.canOpenedEvent.clear()
+      else:
+        fut.complete()
+        self.noBufferSpaceHasWarned = false
+        break
 
 proc updateVelocity(self; dt: Duration) =
   let dtSec = dt.nanoseconds.float * 1e-9

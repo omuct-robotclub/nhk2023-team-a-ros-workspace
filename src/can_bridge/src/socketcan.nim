@@ -160,7 +160,7 @@ proc read*(self: CANSocket): Future[CANFrame] {.async.} =
   else:
     result = parseRawFrame(raw)
 
-proc write*(self: CANSocket, frame: CANFrame): Future[void] {.async.} =
+proc write*(self: CANSocket, frame: CANFrame): Result[void, OSErrorCode] =
   var raw: can_frame
   raw.can_id = frame.id.uint32
   if frame.kind == Remote:
@@ -174,8 +174,9 @@ proc write*(self: CANSocket, frame: CANFrame): Future[void] {.async.} =
   doAssert frame.len <= 8
   raw.len = frame.len.uint8
   raw.data = frame.data
-  
-  await self.handle.AsyncFD.waitWritable()
+
   let ret = write(self.handle.cint, addr raw, sizeof(raw))
   if ret == -1:
-    raiseOSError(osLastError())
+    result.err(osLastError())
+  else:
+    result.ok()
