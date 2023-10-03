@@ -3,17 +3,17 @@
     angular_accel_limit: 1000.0
     arm_angle:
       antiwindup: true
-      kd: 0.0950552105816192
+      kd: 0.0739318299931772
       ki: 0.0
-      kp: 0.700912154783148
+      kp: 1.41622665370917
       max: 0.302593620687272
       min: -0.30144099552381
       use_velocity_for_d_term: false
     arm_length:
       antiwindup: true
-      kd: 0.211233790241128
+      kd: 0.482477196348667
       ki: 0.0
-      kp: 28.4685556024366
+      kp: 17.6188190110431
       max: 0.813767500188556
       min: -0.80748917028868
       use_velocity_for_d_term: false
@@ -41,7 +41,7 @@
     steer:
       antiwindup: true
       kd: 0.0432069134086172
-      ki: 0.153624585032826
+      ki: 0.0
       kp: 0.763322114892799
       max: 0.8
       min: -0.8
