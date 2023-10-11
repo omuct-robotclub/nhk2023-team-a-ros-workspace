@@ -24,7 +24,7 @@
       antiwindup: true
       kd: 0.0
       ki: 0.0
-      kp: 6.80748916804723
+      kp: 6.36402569592505
       max: 40.0
       min: -40.0
       use_velocity_for_d_term: false
@@ -47,7 +47,7 @@
       min: -0.8
       use_velocity_for_d_term: false
     steer0:
-      offset: -0.0
+      offset: 0.0
     steer1:
       offset: 0.0
     steer2:
