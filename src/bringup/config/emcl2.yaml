@@ -1,0 +1,14 @@
+/emcl2_node:
+  ros__parameters:
+    sensor_reset: false
+    num_particles: 50
+    range_threshold: 0.05
+    laser_likelihood_max_dist: 0.2
+    alpha_threshold: 0.2
+    odom_fw_dev_per_fw: 0.01
+    odom_fw_dev_per_rot: 0.001
+    odom_rot_dev_per_fw: 0.01
+    odom_rot_dev_per_rot: 0.01
+    initial_pose_x: -0.5
+    initial_pose_y: 0.5
+    initial_pose_a: 0.0

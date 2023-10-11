@@ -52,6 +52,7 @@
             rosPkgs.plotjuggler
             pkgs.flann
             pkgs.gdb
+            pkgs.clang-tools
           ];
 
           buildInputs = [
