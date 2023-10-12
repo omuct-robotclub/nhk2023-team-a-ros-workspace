@@ -18,6 +18,9 @@ public:
 	LikelihoodFieldMap(const nav_msgs::msg::OccupancyGrid &map, double likelihood_range);
 	~LikelihoodFieldMap();
 
+	LikelihoodFieldMap(const LikelihoodFieldMap& rhs);
+	LikelihoodFieldMap& operator=(const LikelihoodFieldMap& rhs);
+
 	void setLikelihood(int x, int y, double range);
 	double likelihood(double x, double y);
 

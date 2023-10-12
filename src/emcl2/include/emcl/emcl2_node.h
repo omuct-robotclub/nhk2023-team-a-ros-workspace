@@ -4,6 +4,7 @@
 #ifndef INTERFACE_EMCL2_H__
 #define INTERFACE_EMCL2_H__
 
+#include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include "emcl/ExpResetMcl2.h"
 
@@ -36,7 +37,7 @@ private:
 	rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particlecloud_pub_;
 	rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
 	rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr alpha_pub_;
-	rclcpp::SubscriptionBase::SharedPtr laser_scan_sub_;
+	std::unordered_map<std::string, rclcpp::SubscriptionBase::SharedPtr> laser_scan_subs_;
 	rclcpp::SubscriptionBase::SharedPtr initial_pose_sub_;
 	rclcpp::SubscriptionBase::SharedPtr map_sub_;
 
@@ -50,7 +51,7 @@ private:
 	// std::string scan_frame_id_;
 	std::string base_frame_id_;
 
-	std_msgs::msg::Header scan_header_;
+	// std_msgs::msg::Header scan_header_;
 	
 	std::shared_ptr<tf2_ros::TransformBroadcaster> tfb_;
 	std::shared_ptr<tf2_ros::TransformListener> tfl_;
@@ -64,6 +65,14 @@ private:
 	bool simple_reset_request_;
 	double init_x_, init_y_, init_t_;
 
+	struct OdomPose {
+		rclcpp::Time stamp;
+		double x, y, t;
+	};
+
+	std::optional<ExpResetMcl2> last_mcl_;
+	std::vector<OdomPose> odom_history_;
+
 	void publishPose(double x, double y, double t,
 			double x_dev, double y_dev, double t_dev,
 			double xy_cov, double yt_cov, double tx_cov);
@@ -71,7 +80,7 @@ private:
 	void publishParticles(void);
 	void sendTf(void);
 	bool getOdomPose(double& x, double& y, double& yaw);
-	bool getLidarPose(double& x, double& y, double& yaw, bool& inv);
+	bool getLidarPose(const std_msgs::msg::Header& header, double& x, double& y, double& yaw, bool& inv);
 
 	void initCommunication(void);
 	void initPF(void);

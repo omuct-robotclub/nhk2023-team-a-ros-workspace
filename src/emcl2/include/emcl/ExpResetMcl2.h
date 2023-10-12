@@ -5,13 +5,14 @@
 #define EXP_PF2_H__
 
 #include "emcl/Mcl.h"
+#include <sensor_msgs/msg/detail/laser_scan__struct.hpp>
 
 namespace emcl2 {
 
 class ExpResetMcl2 : public Mcl
 {
 public: 
-	ExpResetMcl2(const Pose &p, int num, const Scan &scan,
+	ExpResetMcl2(const Pose &p, int num,
 			const std::shared_ptr<OdomModel> &odom_model,
 			const std::shared_ptr<LikelihoodFieldMap> &map,
 			double alpha_th,
@@ -20,7 +21,7 @@ public:
 			bool sensor_reset);
 	~ExpResetMcl2();
 
-	void sensorUpdate(double lidar_x, double lidar_y, double lidar_t, bool inv);
+	void sensorUpdate(const sensor_msgs::msg::LaserScan& msg, double lidar_x, double lidar_y, double lidar_t, bool inv);
 private:
 	double alpha_threshold_;
 	double expansion_radius_position_;
@@ -32,7 +33,6 @@ private:
 
 	void expansionReset(void);
 
-//bool Particle::isPenetrating(
 	double nonPenetrationRate(int skip, LikelihoodFieldMap *map, Scan &scan);
 };
 

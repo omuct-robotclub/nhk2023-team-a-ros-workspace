@@ -21,20 +21,22 @@ class Mcl
 {
 public: 
 	Mcl(){}
-	Mcl(const Pose &p, int num, const Scan &scan,
+	Mcl(const Pose &p, int num,
 			const std::shared_ptr<OdomModel> &odom_model,
 			const std::shared_ptr<LikelihoodFieldMap> &map);
+	Mcl(const Mcl& rhs);
 	~Mcl();
+
+	Mcl& operator=(const Mcl& rhs);
 
 	std::vector<Particle> particles_;
 	double alpha_;
 
-	void sensorUpdate(double lidar_x, double lidar_y, double lidar_t, bool inv);
+	void sensorUpdate(const sensor_msgs::msg::LaserScan& msg, double lidar_x, double lidar_y, double lidar_t, bool inv);
 	void motionUpdate(double x, double y, double t);
 
 	void initialize(double x, double y, double t);
 
-	void setScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr msg);
 	void meanPose(double &x_mean, double &y_mean, double &t_mean,
 			double &x_var, double &y_var, double &t_var,
 			double &xy_cov, double &yt_cov, double &tx_cov);
@@ -44,13 +46,13 @@ public:
 	static double cos_[(1<<16)];
 	static double sin_[(1<<16)];
 
-protected:
-	Pose *last_odom_;
-	Pose *prev_odom_;
+	Scan scan_from_msg(const sensor_msgs::msg::LaserScan& msg);
 
-	Scan scan_;
-	int processed_seq_;
-	int seq_ = 0;
+protected:
+	Pose *last_odom_ = nullptr;
+	Pose *prev_odom_ = nullptr;
+
+	// Scan scan_;
 
 	double normalizeAngle(double t);
 	void resampling(void);

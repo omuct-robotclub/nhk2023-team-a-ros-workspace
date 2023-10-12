@@ -12,7 +12,6 @@ Scan& Scan::operator=(const Scan &s)
 	if(this == &s)
 		return *this;
 
-	seq_ = s.seq_;
 	scan_increment_ = s.scan_increment_;
 	angle_max_ = s.angle_max_;
 	angle_min_ = s.angle_min_;

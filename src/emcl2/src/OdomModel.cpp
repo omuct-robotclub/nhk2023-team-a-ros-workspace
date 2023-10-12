@@ -4,13 +4,14 @@
 
 #include "emcl/OdomModel.h"
 #include <iostream>
+#include <random>
 #include <stdlib.h>
 #include <cmath>
 
 namespace emcl2 {
 
 OdomModel::OdomModel(double ff, double fr, double rf, double rr) 
-	: std_norm_dist_(0.0, 1.0), fw_dev_(0.0), rot_dev_(0.0), engine_(seed_gen_())
+	: std_norm_dist_(0.0, 1.0), fw_dev_(0.0), rot_dev_(0.0), engine_(std::random_device{}())
 {
 	fw_var_per_fw_ = ff*ff;
 	fw_var_per_rot_ = fr*fr;

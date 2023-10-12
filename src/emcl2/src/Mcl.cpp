@@ -2,6 +2,9 @@
 //SPDX-License-Identifier: LGPL-3.0-or-later
 //Some lines are derived from https://github.com/ros-planning/navigation/tree/noetic-devel/amcl. 
 #include "emcl/Mcl.h"
+#include "emcl/LikelihoodFieldMap.h"
+#include "emcl/OdomModel.h"
+#include <memory>
 #include <rclcpp/logging.hpp>
 #include <iostream>
 #include <stdlib.h>
@@ -12,14 +15,13 @@ namespace emcl2 {
 double Mcl::cos_[(1<<16)];
 double Mcl::sin_[(1<<16)];
 
-Mcl::Mcl(const Pose &p, int num, const Scan &scan,
+Mcl::Mcl(const Pose &p, int num,
 		const std::shared_ptr<OdomModel> &odom_model,
 		const std::shared_ptr<LikelihoodFieldMap> &map)
 	: last_odom_(NULL), prev_odom_(NULL)
 {
-	odom_model_ = move(odom_model);
-	map_ = move(map);
-	scan_ = scan;
+	odom_model_ = std::move(odom_model);
+	map_ = std::move(map);
 
 	if(num <= 0)
 		RCLCPP_ERROR(rclcpp::get_logger("mcl"), "NO PARTICLE");
@@ -28,13 +30,26 @@ Mcl::Mcl(const Pose &p, int num, const Scan &scan,
 	for(int i=0; i<num; i++)
 		particles_.push_back(particle);
 
-	processed_seq_ = -1;
 	alpha_ = 1.0;
 
 	for(int i=0;i<(1<<16);i++){
 		cos_[i] = std::cos(M_PI*i/(1<<15));
 		sin_[i] = std::sin(M_PI*i/(1<<15));
 	}
+}
+
+Mcl::Mcl(const Mcl& rhs) {
+	*this = rhs;
+}
+
+Mcl& Mcl::operator=(const Mcl& rhs) {
+	particles_ = rhs.particles_;
+	alpha_ = rhs.alpha_;
+	last_odom_ = rhs.last_odom_ ? new Pose(*rhs.last_odom_) : nullptr;
+	prev_odom_ = rhs.prev_odom_ ? new Pose(*rhs.prev_odom_) : nullptr;
+	odom_model_ = rhs.odom_model_ ? std::make_shared<OdomModel>(*rhs.odom_model_) : nullptr;
+	map_ = rhs.map_ ? std::make_shared<LikelihoodFieldMap>(*rhs.map_) : nullptr;
+	return *this;
 }
 
 Mcl::~Mcl()
@@ -74,17 +89,9 @@ void Mcl::resampling(void)
 		particles_[i] = old[chosen[i]];
 }
 
-void Mcl::sensorUpdate(double lidar_x, double lidar_y, double lidar_t, bool inv)
+void Mcl::sensorUpdate(const sensor_msgs::msg::LaserScan& msg, double lidar_x, double lidar_y, double lidar_t, bool inv)
 {
-	if(processed_seq_ == scan_.seq_)
-		return;
-
-	Scan scan;
-	int seq = -1;
-	while(seq != scan_.seq_){//trying to copy the latest scan before next 
-		seq = scan_.seq_;
-		scan = scan_;
-	}
+	Scan scan = scan_from_msg(msg);
 
 	scan.lidar_pose_x_ = lidar_x;
 	scan.lidar_pose_y_ = lidar_y;
@@ -125,8 +132,6 @@ void Mcl::sensorUpdate(double lidar_x, double lidar_y, double lidar_t, bool inv)
 		resampling();
 	else
 		resetWeight();
-
-	processed_seq_ = scan_.seq_;
 }
 
 void Mcl::motionUpdate(double x, double y, double t)
@@ -213,21 +218,36 @@ double Mcl::normalizeAngle(double t)
 	return t;
 }
 
-void Mcl::setScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
-{
-	if(msg->ranges.size() != scan_.ranges_.size())
-		scan_.ranges_.resize(msg->ranges.size());
+Scan Mcl::scan_from_msg(const sensor_msgs::msg::LaserScan& msg) {
+	Scan scan;
+	scan.ranges_.resize(msg.ranges.size());
 
-	scan_.seq_ = seq_++;
-	for(int i=0; i<msg->ranges.size(); i++)
-		scan_.ranges_[i] = msg->ranges[i];
+	for(int i=0; i<msg.ranges.size(); i++)
+		scan.ranges_[i] = msg.ranges[i];
 
-	scan_.angle_min_ = msg->angle_min;
-	scan_.angle_max_ = msg->angle_max;
-	scan_.angle_increment_ = msg->angle_increment;
-	scan_.range_min_= msg->range_min;
-	scan_.range_max_= msg->range_max;
+	scan.angle_min_ = msg.angle_min;
+	scan.angle_max_ = msg.angle_max;
+	scan.angle_increment_ = msg.angle_increment;
+	scan.range_min_= msg.range_min;
+	scan.range_max_= msg.range_max;
+	scan.scan_increment_ = 1;
+	return scan;
 }
+
+// void Mcl::setScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
+// {
+// 	if(msg->ranges.size() != scan_.ranges_.size())
+// 		scan_.ranges_.resize(msg->ranges.size());
+
+// 	for(int i=0; i<msg->ranges.size(); i++)
+// 		scan_.ranges_[i] = msg->ranges[i];
+
+// 	scan_.angle_min_ = msg->angle_min;
+// 	scan_.angle_max_ = msg->angle_max;
+// 	scan_.angle_increment_ = msg->angle_increment;
+// 	scan_.range_min_= msg->range_min;
+// 	scan_.range_max_= msg->range_max;
+// }
 
 double Mcl::normalizeBelief(void)
 {

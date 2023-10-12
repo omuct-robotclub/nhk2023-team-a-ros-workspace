@@ -5,12 +5,13 @@
 #include "emcl/ExpResetMcl2.h"
 #include <rclcpp/logging.hpp>
 #include <iostream>
+#include <sensor_msgs/msg/detail/laser_scan__struct.hpp>
 #include <stdlib.h>
 #include <cmath>
 
 namespace emcl2 {
 
-ExpResetMcl2::ExpResetMcl2(const Pose &p, int num, const Scan &scan,
+ExpResetMcl2::ExpResetMcl2(const Pose &p, int num,
 				const std::shared_ptr<OdomModel> &odom_model,
 				const std::shared_ptr<LikelihoodFieldMap> &map,
 				double alpha_th, 
@@ -22,7 +23,7 @@ ExpResetMcl2::ExpResetMcl2(const Pose &p, int num, const Scan &scan,
 	  extraction_rate_(extraction_rate),
 	  range_threshold_(range_threshold),
 	  sensor_reset_(sensor_reset),
-	  Mcl::Mcl(p, num, scan, odom_model, map)
+	  Mcl::Mcl(p, num, odom_model, map)
 {
 }
 
@@ -30,17 +31,9 @@ ExpResetMcl2::~ExpResetMcl2()
 {
 }
 
-void ExpResetMcl2::sensorUpdate(double lidar_x, double lidar_y, double lidar_t, bool inv)
+void ExpResetMcl2::sensorUpdate(const sensor_msgs::msg::LaserScan& msg, double lidar_x, double lidar_y, double lidar_t, bool inv)
 {
-	if(processed_seq_ == scan_.seq_)
-		return;
-
-	Scan scan;
-	int seq = -1;
-	while(seq != scan_.seq_){//trying to copy the latest scan before next 
-		seq = scan_.seq_;
-		scan = scan_;
-	}
+	Scan scan = scan_from_msg(msg);
 
 	scan.lidar_pose_x_ = lidar_x;
 	scan.lidar_pose_y_ = lidar_y;
@@ -68,9 +61,9 @@ void ExpResetMcl2::sensorUpdate(double lidar_x, double lidar_y, double lidar_t, 
 		p.w_ *= p.likelihood(map_.get(), scan);
 
 	alpha_ = nonPenetrationRate( (int)(particles_.size()*extraction_rate_), map_.get(), scan);
-	RCLCPP_INFO(rclcpp::get_logger("exp_reset_mcl2"), "ALPHA: %f / %f", alpha_, alpha_threshold_);
+	// RCLCPP_INFO(rclcpp::get_logger("exp_reset_mcl2"), "ALPHA: %f / %f", alpha_, alpha_threshold_);
 	if(alpha_ < alpha_threshold_){
-		RCLCPP_INFO(rclcpp::get_logger("exp_reset_mcl2"), "RESET");
+		// RCLCPP_INFO(rclcpp::get_logger("exp_reset_mcl2"), "RESET");
 		expansionReset();
 		for(auto &p : particles_)
 			p.w_ *= p.likelihood(map_.get(), scan);
@@ -80,8 +73,6 @@ void ExpResetMcl2::sensorUpdate(double lidar_x, double lidar_y, double lidar_t, 
 		resampling();
 	else
 		resetWeight();
-
-	processed_seq_ = scan_.seq_;
 }
 
 double ExpResetMcl2::nonPenetrationRate(int skip, LikelihoodFieldMap *map, Scan &scan)

@@ -20,7 +20,7 @@
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>std_srvs</depend>
-  <!-- <depend>backward_ros</depend> -->
+  <depend>backward_ros</depend>
 
   <depend>rclcpp</depend>
 

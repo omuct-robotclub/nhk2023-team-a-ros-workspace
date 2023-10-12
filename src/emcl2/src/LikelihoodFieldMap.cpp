@@ -38,6 +38,29 @@ LikelihoodFieldMap::LikelihoodFieldMap(const nav_msgs::msg::OccupancyGrid &map, 
 	normalize();
 }
 
+LikelihoodFieldMap::LikelihoodFieldMap(const LikelihoodFieldMap& rhs) {
+	*this = rhs;
+}
+
+LikelihoodFieldMap& LikelihoodFieldMap::operator=(const LikelihoodFieldMap& rhs) {
+	width_ = rhs.width_;
+	height_ = rhs.height_;
+	origin_x_ = rhs.origin_x_;
+	origin_y_ = rhs.origin_y_;
+	resolution_ = rhs.resolution_;
+	for(auto &e : likelihoods_)
+		delete [] e;
+	likelihoods_.clear();
+	for(int x=0; x<width_; x++) {
+		likelihoods_.push_back(new double[height_]);
+		for(int y=0; y<height_; y++) {
+			likelihoods_[x][y] = rhs.likelihoods_[x][y];
+		}
+	}
+	free_cells_ = rhs.free_cells_;
+	return *this;
+}
+
 LikelihoodFieldMap::~LikelihoodFieldMap()
 {
 	for(auto &e : likelihoods_)
