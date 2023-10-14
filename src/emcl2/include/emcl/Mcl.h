@@ -1,8 +1,8 @@
 //SPDX-FileCopyrightText: 2022 Ryuichi Ueda ryuichiueda@gmail.com
 //SPDX-License-Identifier: LGPL-3.0-or-later
 
-#ifndef PF_H__
-#define PF_H__
+#ifndef EXP_PF2_H__
+#define EXP_PF2_H__
 
 #include <vector>
 #include <sstream>
@@ -13,22 +13,17 @@
 #include "emcl/OdomModel.h"
 #include "emcl/LikelihoodFieldMap.h"
 
-#include "nav_msgs/msg/occupancy_grid.hpp"
-#include "sensor_msgs/msg/laser_scan.hpp"
-
 namespace emcl2 {
 
 class Mcl
 {
 public: 
 	Mcl(const Pose &p, int num,
-			const OdomModel &odom_model,
+			const OdomModel& odom_model,
 			const std::shared_ptr<const LikelihoodFieldMap> map);
 
-	std::vector<Particle> particles_;
-	double alpha_;
+	void sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t, bool inv);
 
-	void sensorUpdate(const sensor_msgs::msg::LaserScan& msg, double lidar_x, double lidar_y, double lidar_t, bool inv);
 	void motionUpdate(double x, double y, double t);
 
 	void initialize(double x, double y, double t);
@@ -39,12 +34,18 @@ public:
 
 	void simpleReset(void);
 
-	static double cos_[(1<<16)];
-	static double sin_[(1<<16)];
+	double alpha_threshold;
+	double expansion_radius_position;
+	double expansion_radius_orientation;
 
-	Scan scan_from_msg(const sensor_msgs::msg::LaserScan& msg);
+	double extraction_rate;
+	double range_threshold;
+	bool sensor_reset;
 
-protected:
+	std::vector<Particle> particles_;
+	double alpha_;
+
+private:
 	std::optional<Pose> last_odom_;
 	std::optional<Pose> prev_odom_;
 
@@ -55,6 +56,10 @@ protected:
 
 	OdomModel odom_model_;
 	std::shared_ptr<const LikelihoodFieldMap> map_;
+
+	void expansionReset(void);
+
+	double nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan);
 };
 
 }

@@ -3,12 +3,12 @@
 //Some lines are derived from https://github.com/ros-planning/navigation/tree/noetic-devel/amcl. 
 
 #include "emcl/Particle.h"
-#include "emcl/Mcl.h"
+#include "emcl/lookup_tables.h"
 #include <cmath>
 
 namespace emcl2 {
-
-
+using lut::sin_lut;
+using lut::cos_lut;
 
 Particle::Particle(double x, double y, double t, double w) : p_(x, y, t)
 {
@@ -18,10 +18,10 @@ Particle::Particle(double x, double y, double t, double w) : p_(x, y, t)
 double Particle::likelihood(const LikelihoodFieldMap& map, const Scan &scan)
 {
 	uint16_t t = p_.get16bitRepresentation();
-	double lidar_x = p_.x_ + scan.lidar_pose_x_*Mcl::cos_[t] 
-				- scan.lidar_pose_y_*Mcl::sin_[t];
-	double lidar_y = p_.y_ + scan.lidar_pose_x_*Mcl::sin_[t] 
-				+ scan.lidar_pose_y_*Mcl::cos_[t];
+	double lidar_x = p_.x_ + scan.lidar_pose_x_*cos_lut[t] 
+				- scan.lidar_pose_y_*sin_lut[t];
+	double lidar_y = p_.y_ + scan.lidar_pose_x_*sin_lut[t] 
+				+ scan.lidar_pose_y_*cos_lut[t];
 	uint16_t lidar_yaw = Pose::get16bitRepresentation(scan.lidar_pose_yaw_);
 
 	double ans = 0.0;
@@ -29,8 +29,8 @@ double Particle::likelihood(const LikelihoodFieldMap& map, const Scan &scan)
 		if(not scan.valid(scan.ranges_[i]))
 			continue;
 		uint16_t a = scan.directions_16bit_[i] + t + lidar_yaw;
-		double lx = lidar_x + scan.ranges_[i] * Mcl::cos_[a];
-		double ly = lidar_y + scan.ranges_[i] * Mcl::sin_[a];
+		double lx = lidar_x + scan.ranges_[i] * cos_lut[a];
+		double ly = lidar_y + scan.ranges_[i] * sin_lut[a];
 
 		ans += map.likelihood(lx, ly);
 	}
@@ -40,10 +40,10 @@ double Particle::likelihood(const LikelihoodFieldMap& map, const Scan &scan)
 bool Particle::wallConflict(const LikelihoodFieldMap& map, const Scan &scan, double threshold, bool replace)
 {
 	uint16_t t = p_.get16bitRepresentation();
-	double lidar_x = p_.x_ + scan.lidar_pose_x_*Mcl::cos_[t]
-				- scan.lidar_pose_y_*Mcl::sin_[t];
-	double lidar_y = p_.y_ + scan.lidar_pose_x_*Mcl::sin_[t]
-				+ scan.lidar_pose_y_*Mcl::cos_[t];
+	double lidar_x = p_.x_ + scan.lidar_pose_x_*cos_lut[t]
+				- scan.lidar_pose_y_*sin_lut[t];
+	double lidar_y = p_.y_ + scan.lidar_pose_x_*sin_lut[t]
+				+ scan.lidar_pose_y_*cos_lut[t];
 	uint16_t lidar_yaw = Pose::get16bitRepresentation(scan.lidar_pose_yaw_);
 
 	const bool reverse = rand()%2;
@@ -95,8 +95,8 @@ bool Particle::isPenetrating(double ox, double oy, double range, uint16_t direct
 {
 	// bool hit = false;
 	// for(double d=map.resolution_;d<range;d+=map.resolution_){
-	// 	double lx = ox + d * Mcl::cos_[direction];
-	// 	double ly = oy + d * Mcl::sin_[direction];
+	// 	double lx = ox + d * cos_lut[direction];
+	// 	double ly = oy + d * sin_lut[direction];
 
 	// 	if((not hit) and map.likelihood(lx, ly) > 0.99){
 	// 		hit = true;
@@ -111,8 +111,8 @@ bool Particle::isPenetrating(double ox, double oy, double range, uint16_t direct
 	bool hit = false;
 	double d = map.safe_distance(ox, oy);
 	while (true) {
-		double lx = ox + d * Mcl::cos_[direction];
-		double ly = oy + d * Mcl::sin_[direction];
+		double lx = ox + d * cos_lut[direction];
+		double ly = oy + d * sin_lut[direction];
 
 		if((not hit) and map.likelihood(lx, ly) > 0.99){
 			hit = true;
@@ -133,10 +133,10 @@ void Particle::sensorReset(double ox, double oy,
 		double range1, uint16_t direction1, double hit_lx1, double hit_ly1,
 		double range2, uint16_t direction2, double hit_lx2, double hit_ly2)
 {
-	double p1_x = ox + range1 * Mcl::cos_[direction1];
-	double p1_y = oy + range1 * Mcl::sin_[direction1];
-	double p2_x = ox + range2 * Mcl::cos_[direction2];
-	double p2_y = oy + range2 * Mcl::sin_[direction2];
+	double p1_x = ox + range1 * cos_lut[direction1];
+	double p1_y = oy + range1 * sin_lut[direction1];
+	double p2_x = ox + range2 * cos_lut[direction2];
+	double p2_y = oy + range2 * sin_lut[direction2];
 
 	double cx = (hit_lx1 + hit_lx2)/2;
 	double cy = (hit_ly1 + hit_ly2)/2;

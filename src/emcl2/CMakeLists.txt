@@ -15,8 +15,8 @@ ament_auto_add_executable(emcl2_node
   src/Pose.cpp
   src/OdomModel.cpp
   src/Particle.cpp
-  src/ExpResetMcl2.cpp
   src/Mcl.cpp
+  src/lookup_tables.cpp
 )
 
 # target_compile_options(emcl2_node PRIVATE -fsanitize=undefined)

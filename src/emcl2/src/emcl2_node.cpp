@@ -3,7 +3,7 @@
 //Some lines are derived from https://github.com/ros-planning/navigation/tree/noetic-devel/amcl. 
 
 #include "emcl/emcl2_node.h"
-#include "emcl/ExpResetMcl2.h"
+#include "emcl/Mcl.h"
 #include "emcl/Pose.h"
 
 #include "tf2/utils.h"
@@ -12,6 +12,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "std_msgs/msg/float32.hpp"
+#include <sensor_msgs/msg/detail/laser_scan__struct.hpp>
 
 namespace emcl2 {
 
@@ -75,28 +76,19 @@ void EMcl2Node::initPF(void)
 	std::shared_ptr<LikelihoodFieldMap> map = initMap();
 
 	Pose init_pose;
-	init_pose.x_ = declare_parameter("initial_pose_x", 0.0);
-	init_pose.y_ = declare_parameter("initial_pose_y", 0.0);
-	init_pose.t_ = declare_parameter("initial_pose_a", 0.0);
+	init_pose.x_ = get_parameter("initial_pose_x").as_double();
+	init_pose.y_ = get_parameter("initial_pose_y").as_double();
+	init_pose.t_ = get_parameter("initial_pose_a").as_double();
 
-	int num_particles;
-	double alpha_th;
-	double ex_rad_pos, ex_rad_ori;
-	num_particles = get_parameter("num_particles").as_int();
-	alpha_th = get_parameter("alpha_threshold").as_double();
-	ex_rad_pos = get_parameter("expansion_radius_position").as_double();
-	ex_rad_ori = get_parameter("expansion_radius_orientation").as_double();
+	pf_ = std::make_shared<Mcl>(
+		init_pose, get_parameter("num_particles").as_int(), getOdomModel(), map);
 
-	double extraction_rate, range_threshold;
-	bool sensor_reset;
-	extraction_rate = get_parameter("extraction_rate").as_double();
-	range_threshold = get_parameter("range_threshold").as_double();
-	sensor_reset = get_parameter("sensor_reset").as_bool();
-
-	pf_ = std::make_shared<ExpResetMcl2>(
-		init_pose, num_particles, getOdomModel(), map,
-		alpha_th, ex_rad_pos, ex_rad_ori,
-		extraction_rate, range_threshold, sensor_reset);
+	pf_->alpha_threshold = get_parameter("alpha_threshold").as_double();
+	pf_->expansion_radius_position = get_parameter("expansion_radius_position").as_double();
+	pf_->expansion_radius_orientation = get_parameter("expansion_radius_orientation").as_double();
+	pf_->extraction_rate = get_parameter("extraction_rate").as_double();
+	pf_->range_threshold = get_parameter("range_threshold").as_double();
+	pf_->sensor_reset = get_parameter("sensor_reset").as_bool();
 }
 
 OdomModel EMcl2Node::getOdomModel(void)
@@ -144,7 +136,7 @@ void EMcl2Node::cbScan(sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
 		return;
 	}
 
-	pf_->sensorUpdate(*msg, lx, ly, lt, inv);
+	pf_->sensorUpdate(convert_scan(*msg), lx, ly, lt, inv);
 
 	for (; odom_index < odom_history_.size(); odom_index++) {
 		const auto& odom = odom_history_[odom_index];
@@ -322,6 +314,22 @@ bool EMcl2Node::getLidarPose(const std_msgs::msg::Header& header, double& x, dou
 	inv = (fabs(pitch) > M_PI/2 || fabs(roll) > M_PI/2) ? true : false;
 
 	return true;
+}
+
+Scan EMcl2Node::convert_scan(const sensor_msgs::msg::LaserScan& msg) {
+	Scan scan;
+	scan.ranges_.resize(msg.ranges.size());
+
+	for(int i=0; i<msg.ranges.size(); i++)
+		scan.ranges_[i] = msg.ranges[i];
+
+	scan.angle_min_ = msg.angle_min;
+	scan.angle_max_ = msg.angle_max;
+	scan.angle_increment_ = msg.angle_increment;
+	scan.range_min_= msg.range_min;
+	scan.range_max_= msg.range_max;
+	scan.scan_increment_ = 1;
+	return scan;
 }
 
 bool EMcl2Node::cbSimpleReset(std_srvs::srv::Empty::Request::SharedPtr req, std_srvs::srv::Empty::Response::SharedPtr res)

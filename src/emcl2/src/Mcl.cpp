@@ -1,27 +1,30 @@
 //SPDX-FileCopyrightText: 2022 Ryuichi Ueda ryuichiueda@gmail.com
 //SPDX-License-Identifier: LGPL-3.0-or-later
 //Some lines are derived from https://github.com/ros-planning/navigation/tree/noetic-devel/amcl. 
+
 #include "emcl/Mcl.h"
-#include "emcl/LikelihoodFieldMap.h"
-#include "emcl/OdomModel.h"
-#include <memory>
+#include "emcl/lookup_tables.h"
 #include <rclcpp/logging.hpp>
 #include <iostream>
+#include <sensor_msgs/msg/detail/laser_scan__struct.hpp>
 #include <stdlib.h>
 #include <cmath>
 
 namespace emcl2 {
 
-double Mcl::cos_[(1<<16)];
-double Mcl::sin_[(1<<16)];
-
 Mcl::Mcl(const Pose &p, int num,
-		const OdomModel& odom_model,
-		const std::shared_ptr<const LikelihoodFieldMap> map)
-	: odom_model_{odom_model}
+				const OdomModel& odom_model,
+				const std::shared_ptr<const LikelihoodFieldMap> map)
+	: alpha_threshold(0.5), 
+	  expansion_radius_position(0.1),
+	  expansion_radius_orientation(0.1),
+	  extraction_rate(0.1),
+	  range_threshold(0.1),
+	  sensor_reset(true),
+	  odom_model_{odom_model}
 {
-	odom_model_ = std::move(odom_model);
-	map_ = std::move(map);
+	odom_model_ = odom_model;
+	map_ = map;
 
 	if(num <= 0)
 		RCLCPP_ERROR(rclcpp::get_logger("mcl"), "NO PARTICLE");
@@ -31,10 +34,88 @@ Mcl::Mcl(const Pose &p, int num,
 		particles_.push_back(particle);
 
 	alpha_ = 1.0;
+}
 
-	for(int i=0;i<(1<<16);i++){
-		cos_[i] = std::cos(M_PI*i/(1<<15));
-		sin_[i] = std::sin(M_PI*i/(1<<15));
+void Mcl::sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t, bool inv)
+{
+	const auto logger = rclcpp::get_logger("exp_reset_mcl2");
+
+	scan.lidar_pose_x_ = lidar_x;
+	scan.lidar_pose_y_ = lidar_y;
+	scan.lidar_pose_yaw_ = lidar_t;
+
+	int i = 0;
+	if(!inv){
+		for(auto e : scan.ranges_)
+			scan.directions_16bit_.push_back(
+				Pose::get16bitRepresentation(scan.angle_min_ + (i++)*scan.angle_increment_)
+			);
+	}else{
+		for(auto e : scan.ranges_)
+			scan.directions_16bit_.push_back(
+				Pose::get16bitRepresentation(scan.angle_max_ - (i++)*scan.angle_increment_)
+			);
+	}
+
+	double valid_pct = 0.0;
+	int valid_beams = scan.countValidBeams(&valid_pct);
+	if(valid_beams == 0)
+		return;
+
+	for(auto &p : particles_)
+		p.w_ *= p.likelihood(*map_, scan);
+
+	RCLCPP_INFO(logger, "non penetration rate begin");
+	if (alpha_threshold > 0.0) {
+		// alpha_ = nonPenetrationRate( (int)(particles_.size()*extraction_rate_), *map_, scan);
+		alpha_ = normalizeBelief()/valid_beams;
+		RCLCPP_INFO(logger, "ALPHA: %f / %f", alpha_, alpha_threshold);
+		if(alpha_ < alpha_threshold){
+			RCLCPP_INFO(logger, "RESET");
+			expansionReset();
+			for(auto &p : particles_)
+				p.w_ *= p.likelihood(*map_, scan);
+		}
+	}
+
+	if(normalizeBelief() > 0.000001) {
+		RCLCPP_INFO(logger, "resampling begin");
+		resampling();
+		RCLCPP_INFO(logger, "resampling end");
+	}
+	else {
+		RCLCPP_INFO(logger, "reset weight begin");
+		resetWeight();
+		RCLCPP_INFO(logger, "reset weight end");
+	}
+}
+
+double Mcl::nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan)
+{
+	static uint16_t shift = 0;
+	int counter = 0;
+	int penetrating = 0;
+	for(int i=shift%skip; i<particles_.size(); i+=skip){
+		counter++;
+		if(particles_[i].wallConflict(map, scan, range_threshold, sensor_reset))
+			penetrating++;
+	}
+	shift++;
+
+	std::cout << penetrating << " " << counter << std::endl;
+	return (double)(counter - penetrating) / counter;
+}
+
+void Mcl::expansionReset(void)
+{
+	for(auto &p : particles_){
+		double length = 2*((double)rand()/RAND_MAX - 0.5)*expansion_radius_position;
+		double direction = 2*((double)rand()/RAND_MAX - 0.5)*M_PI;
+
+		p.p_.x_ += length*cos(direction);
+		p.p_.y_ += length*sin(direction);
+		p.p_.t_ += 2*((double)rand()/RAND_MAX - 0.5)*expansion_radius_orientation;
+		p.w_ = 1.0/particles_.size();
 	}
 }
 
@@ -67,51 +148,6 @@ void Mcl::resampling(void)
 
 	for(int i=0; i<particles_.size(); i++)
 		particles_[i] = old[chosen[i]];
-}
-
-void Mcl::sensorUpdate(const sensor_msgs::msg::LaserScan& msg, double lidar_x, double lidar_y, double lidar_t, bool inv)
-{
-	Scan scan = scan_from_msg(msg);
-
-	scan.lidar_pose_x_ = lidar_x;
-	scan.lidar_pose_y_ = lidar_y;
-	scan.lidar_pose_yaw_ = lidar_t;
-
-	int i = 0;
-	if (!inv) {
-		for(auto e : scan.ranges_)
-			scan.directions_16bit_.push_back(
-				Pose::get16bitRepresentation(scan.angle_min_ + (i++)*scan.angle_increment_)
-			);
-	} else {
-		for(auto e : scan.ranges_)
-			scan.directions_16bit_.push_back(
-				Pose::get16bitRepresentation(scan.angle_max_ - (i++)*scan.angle_increment_)
-			);
-	}
-
-	double valid_pct = 0.0;
-	int valid_beams = scan.countValidBeams(&valid_pct);
-	if(valid_beams == 0)
-		return;
-
-	for(auto &p : particles_)
-		p.w_ *= p.likelihood(*map_, scan);
-
-	/*
-	alpha_ = normalizeBelief()/valid_beams;
-	if(alpha_ < alpha_threshold_ and valid_pct > open_space_threshold_){
-		ROS_INFO("RESET");
-		expansionReset();
-		for(auto &p : particles_)
-			p.w_ *= p.likelihood(map_.get(), scan);
-	}
-	*/
-
-	if(normalizeBelief() > 0.000001)
-		resampling();
-	else
-		resetWeight();
 }
 
 void Mcl::motionUpdate(double x, double y, double t)
@@ -197,37 +233,6 @@ double Mcl::normalizeAngle(double t)
 
 	return t;
 }
-
-Scan Mcl::scan_from_msg(const sensor_msgs::msg::LaserScan& msg) {
-	Scan scan;
-	scan.ranges_.resize(msg.ranges.size());
-
-	for(int i=0; i<msg.ranges.size(); i++)
-		scan.ranges_[i] = msg.ranges[i];
-
-	scan.angle_min_ = msg.angle_min;
-	scan.angle_max_ = msg.angle_max;
-	scan.angle_increment_ = msg.angle_increment;
-	scan.range_min_= msg.range_min;
-	scan.range_max_= msg.range_max;
-	scan.scan_increment_ = 1;
-	return scan;
-}
-
-// void Mcl::setScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
-// {
-// 	if(msg->ranges.size() != scan_.ranges_.size())
-// 		scan_.ranges_.resize(msg->ranges.size());
-
-// 	for(int i=0; i<msg->ranges.size(); i++)
-// 		scan_.ranges_[i] = msg->ranges[i];
-
-// 	scan_.angle_min_ = msg->angle_min;
-// 	scan_.angle_max_ = msg->angle_max;
-// 	scan_.angle_increment_ = msg->angle_increment;
-// 	scan_.range_min_= msg->range_min;
-// 	scan_.range_max_= msg->range_max;
-// }
 
 double Mcl::normalizeBelief(void)
 {

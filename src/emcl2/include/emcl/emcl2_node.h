@@ -6,7 +6,7 @@
 
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
-#include "emcl/ExpResetMcl2.h"
+#include "emcl/Mcl.h"
 
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
@@ -29,7 +29,7 @@ public:
 	void loop(void);
 
 private:
-	std::shared_ptr<ExpResetMcl2> pf_;
+	std::shared_ptr<Mcl> pf_;
 
 	rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particlecloud_pub_;
 	rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
@@ -54,7 +54,6 @@ private:
 	nav_msgs::msg::OccupancyGrid::ConstSharedPtr map_;
 	tf2::Transform latest_tf_;
 
-	double odom_freq_;
 	bool init_request_;
 	bool simple_reset_request_;
 	double init_x_, init_y_, init_t_;
@@ -64,7 +63,7 @@ private:
 		double x, y, t;
 	};
 
-	std::optional<ExpResetMcl2> last_mcl_;
+	std::optional<Mcl> last_mcl_;
 	std::vector<OdomPose> odom_history_;
 
 	void publishPose(double x, double y, double t,
@@ -79,6 +78,8 @@ private:
 	void initPF(void);
 	std::shared_ptr<LikelihoodFieldMap> initMap(void);
 	OdomModel getOdomModel(void);
+
+	Scan convert_scan(const sensor_msgs::msg::LaserScan & msg);
 
 	void cbMap(nav_msgs::msg::OccupancyGrid::ConstSharedPtr msg);
 	void cbScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr msg);
