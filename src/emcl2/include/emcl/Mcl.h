@@ -22,17 +22,19 @@ public:
 			const OdomModel& odom_model,
 			const std::shared_ptr<const LikelihoodFieldMap> map);
 
-	void sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t, bool inv);
+	void sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t, bool inv, bool do_expansion_reset);
 
-	void motionUpdate(double x, double y, double t);
+	void motionUpdate(Pose odom);
 
 	void initialize(double x, double y, double t);
 
-	void meanPose(double &x_mean, double &y_mean, double &t_mean,
+	void meanPose(Pose& mean,
 			double &x_var, double &y_var, double &t_var,
 			double &xy_cov, double &yt_cov, double &tx_cov);
 
 	void simpleReset(void);
+
+	std::optional<Pose> get_prev_odom() { return prev_odom_; }
 
 	double alpha_threshold;
 	double expansion_radius_position;
@@ -46,7 +48,7 @@ public:
 	double alpha_;
 
 private:
-	std::optional<Pose> last_odom_, prev_odom_;
+	std::optional<Pose> prev_odom_;
 	std::shared_ptr<const LikelihoodFieldMap> map_;
 	OdomModel odom_model_;
 

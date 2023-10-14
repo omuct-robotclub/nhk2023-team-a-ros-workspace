@@ -36,7 +36,7 @@ Mcl::Mcl(const Pose &p, int num,
 	alpha_ = 1.0;
 }
 
-void Mcl::sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t, bool inv)
+void Mcl::sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t, bool inv, bool do_expansion_reset)
 {
 	const auto logger = rclcpp::get_logger("exp_reset_mcl2");
 
@@ -65,13 +65,12 @@ void Mcl::sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t
 	for(auto &p : particles_)
 		p.w_ *= p.likelihood(*map_, scan);
 
-	RCLCPP_INFO(logger, "non penetration rate begin");
-	if (alpha_threshold > 0.0) {
+	if (alpha_threshold > 0.0 && do_expansion_reset) {
 		// alpha_ = nonPenetrationRate( (int)(particles_.size()*extraction_rate_), *map_, scan);
 		alpha_ = normalizeBelief()/valid_beams;
-		RCLCPP_INFO(logger, "ALPHA: %f / %f", alpha_, alpha_threshold);
+		// RCLCPP_INFO(logger, "ALPHA: %f / %f", alpha_, alpha_threshold);
 		if(alpha_ < alpha_threshold){
-			RCLCPP_INFO(logger, "RESET");
+			// RCLCPP_INFO(logger, "RESET");
 			expansionReset();
 			for(auto &p : particles_)
 				p.w_ *= p.likelihood(*map_, scan);
@@ -79,14 +78,10 @@ void Mcl::sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t
 	}
 
 	if(normalizeBelief() > 0.000001) {
-		RCLCPP_INFO(logger, "resampling begin");
 		resampling();
-		RCLCPP_INFO(logger, "resampling end");
 	}
 	else {
-		RCLCPP_INFO(logger, "reset weight begin");
 		resetWeight();
-		RCLCPP_INFO(logger, "reset weight end");
 	}
 }
 
@@ -150,16 +145,14 @@ void Mcl::resampling(void)
 		particles_[i] = old[chosen[i]];
 }
 
-void Mcl::motionUpdate(double x, double y, double t)
+void Mcl::motionUpdate(Pose odom)
 {
-	if(!last_odom_.has_value()){
-		last_odom_ = Pose(x, y, t);
-		prev_odom_ = Pose(x, y, t);
+	if(!prev_odom_.has_value()){
+		prev_odom_ = odom;
 		return;
-	}else
-		last_odom_->set(x, y, t);
+	}
 
-	Pose d = *last_odom_ - *prev_odom_;
+	Pose d = odom - *prev_odom_;
 	if(d.nearlyZero())
 		return;
 
@@ -172,10 +165,10 @@ void Mcl::motionUpdate(double x, double y, double t)
 		p.p_.move(fw_length, fw_direction, d.t_,
 			odom_model_.drawFwNoise(), odom_model_.drawRotNoise());
 
-	prev_odom_->set(*last_odom_);
+	prev_odom_ = odom;
 }
 
-void Mcl::meanPose(double &x_mean, double &y_mean, double &t_mean,
+void Mcl::meanPose(Pose& mean,
 				double &x_dev, double &y_dev, double &t_dev,
 				double &xy_cov, double &yt_cov, double &tx_cov)
 {
@@ -188,23 +181,23 @@ void Mcl::meanPose(double &x_mean, double &y_mean, double &t_mean,
 		t2 += normalizeAngle(p.p_.t_ + M_PI);
 	}
 
-	x_mean = x / particles_.size();
-	y_mean = y / particles_.size();
-	t_mean = t / particles_.size();
+	mean.x_ = x / particles_.size();
+	mean.y_ = y / particles_.size();
+	mean.t_ = t / particles_.size();
 	double t2_mean = t2 / particles_.size();
 
 	double xx, yy, tt, tt2;
 	xx = yy = tt = tt2 = 0.0;
 	for(const auto &p : particles_){
-		xx += pow(p.p_.x_ - x_mean, 2);
-		yy += pow(p.p_.y_ - y_mean, 2);
-		tt += pow(p.p_.t_ - t_mean, 2);
+		xx += pow(p.p_.x_ - mean.x_, 2);
+		yy += pow(p.p_.y_ - mean.y_, 2);
+		tt += pow(p.p_.t_ - mean.t_, 2);
 		tt2 += pow(normalizeAngle(p.p_.t_ + M_PI) - t2_mean, 2);
 	}
 
 	if(tt > tt2){
 		tt = tt2;
-		t_mean = normalizeAngle(t2_mean - M_PI);
+		mean.t_ = normalizeAngle(t2_mean - M_PI);
 	}
 
 	x_dev = xx/(particles_.size() - 1);
@@ -214,9 +207,9 @@ void Mcl::meanPose(double &x_mean, double &y_mean, double &t_mean,
 	double xy, yt, tx;
 	xy = yt = tx = 0.0;
 	for(const auto &p : particles_){
-		xy += (p.p_.x_ - x_mean)*(p.p_.y_ - y_mean);
-		yt += (p.p_.y_ - y_mean)*(normalizeAngle(p.p_.t_ - t_mean));
-		tx += (p.p_.x_ - x_mean)*(normalizeAngle(p.p_.t_ - t_mean));
+		xy += (p.p_.x_ - mean.x_)*(p.p_.y_ - mean.y_);
+		yt += (p.p_.y_ - mean.y_)*(normalizeAngle(p.p_.t_ - mean.t_));
+		tx += (p.p_.x_ - mean.x_)*(normalizeAngle(p.p_.t_ - mean.t_));
 	}
 
 	xy_cov = xy/(particles_.size() - 1);

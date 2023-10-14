@@ -5,7 +5,9 @@
 #define INTERFACE_EMCL2_H__
 
 #include <optional>
+#include <deque>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/subscription_base.hpp>
 #include "emcl/Mcl.h"
 
 #include "tf2_ros/transform_broadcaster.h"
@@ -16,6 +18,7 @@
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 #include "std_srvs/srv/empty.hpp"
 #include "std_msgs/msg/float32.hpp"
 
@@ -26,8 +29,6 @@ class EMcl2Node : public rclcpp::Node
 public:
 	EMcl2Node();
 
-	void loop(void);
-
 private:
 	std::shared_ptr<Mcl> pf_;
 
@@ -37,6 +38,7 @@ private:
 	std::unordered_map<std::string, rclcpp::SubscriptionBase::SharedPtr> laser_scan_subs_;
 	rclcpp::SubscriptionBase::SharedPtr initial_pose_sub_;
 	rclcpp::SubscriptionBase::SharedPtr map_sub_;
+	rclcpp::SubscriptionBase::SharedPtr odom_sub_;
 
 	rclcpp::Service<std_srvs::srv::Empty>::SharedPtr global_loc_srv_;
 
@@ -60,16 +62,19 @@ private:
 
 	struct OdomPose {
 		rclcpp::Time stamp;
-		double x, y, t;
+		Pose pose;
+		bool is_moving;
 	};
 
+	nav_msgs::msg::Odometry::ConstSharedPtr prev_odom_msg_;
+	std::optional<Pose> prev_odom_;
 	std::optional<Mcl> last_mcl_;
-	std::vector<OdomPose> odom_history_;
+	std::deque<OdomPose> odom_history_;
 
-	void publishPose(double x, double y, double t,
+	void publishPose(Pose pose,
 			double x_dev, double y_dev, double t_dev,
 			double xy_cov, double yt_cov, double tx_cov);
-	void publishOdomFrame(double x, double y, double t);
+	void publishOdomFrame(Pose pose);
 	void publishParticles(void);
 	void sendTf(void);
 	bool getOdomPose(double& x, double& y, double& yaw);
@@ -83,6 +88,7 @@ private:
 
 	void cbMap(nav_msgs::msg::OccupancyGrid::ConstSharedPtr msg);
 	void cbScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr msg);
+	void cbOdom(const nav_msgs::msg::Odometry::ConstSharedPtr msg);
 	bool cbSimpleReset(std_srvs::srv::Empty::Request::SharedPtr req, std_srvs::srv::Empty::Response::SharedPtr res);
 	void initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg);
 };

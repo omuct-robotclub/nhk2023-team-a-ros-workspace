@@ -12,6 +12,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "std_msgs/msg/float32.hpp"
+#include <nav_msgs/msg/detail/odometry__struct.hpp>
 #include <sensor_msgs/msg/detail/laser_scan__struct.hpp>
 
 namespace emcl2 {
@@ -38,6 +39,7 @@ EMcl2Node::EMcl2Node()
 	alpha_pub_ = create_publisher<std_msgs::msg::Float32>("alpha", rclcpp::SystemDefaultsQoS());
 	initial_pose_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", rclcpp::SystemDefaultsQoS(), std::bind(&EMcl2Node::initialPoseReceived, this, _1));
 	map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>("map", rclcpp::SystemDefaultsQoS().reliable().transient_local(), std::bind(&EMcl2Node::cbMap, this, _1));
+	odom_sub_ = create_subscription<nav_msgs::msg::Odometry>("odom", rclcpp::SensorDataQoS(), std::bind(&EMcl2Node::cbOdom, this, _1));
 
 	global_loc_srv_ = create_service<std_srvs::srv::Empty>("global_localization", std::bind(&EMcl2Node::cbSimpleReset, this, _1, _2));
 
@@ -61,13 +63,12 @@ EMcl2Node::EMcl2Node()
 	declare_parameter("alpha_threshold", 0.5);
 	declare_parameter("expansion_radius_position", 0.1);
 	declare_parameter("expansion_radius_orientation", 0.2);
+	declare_parameter("expansion_max_linear_velocity", 0.1);
+	declare_parameter("expansion_max_angular_velocity", 0.1);
 
 	declare_parameter("extraction_rate", 0.1);
 	declare_parameter("range_threshold", 0.1);
 	declare_parameter("sensor_reset", true);
-
-	double odom_freq = declare_parameter("odom_freq", 50.0);
-	wall_timer_ = create_wall_timer(1s / odom_freq, std::bind(&EMcl2Node::loop, this));
 }
 
 
@@ -114,21 +115,20 @@ void EMcl2Node::cbScan(sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
 {
 	if (pf_ == nullptr) return;
 
-	RCLCPP_INFO(get_logger(), "cbScan begin");
-
 	if (last_mcl_.has_value()) {
 		*pf_ = *last_mcl_;
 	}
 	
 	rclcpp::Time stamp = msg->header.stamp;
-	size_t odom_index = 0;
-	for (; odom_index < odom_history_.size(); odom_index++) {
-		const auto& odom = odom_history_[odom_index];
+	bool is_moving = false;
+	while (!odom_history_.empty()) {
+		const auto& odom = odom_history_.front();
+		is_moving = odom.is_moving;
 		if (stamp < odom.stamp) break;
-		pf_->motionUpdate(odom.x, odom.y, odom.t);
+		pf_->motionUpdate(odom.pose);
+		odom_history_.pop_front();
 	}
-	RCLCPP_INFO(get_logger(), "odometry applied %zu/%zu", odom_index, odom_history_.size());
-	
+
 	double lx, ly, lt;
 	bool inv;
 	if(not getLidarPose(msg->header, lx, ly, lt, inv)){
@@ -136,17 +136,13 @@ void EMcl2Node::cbScan(sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
 		return;
 	}
 
-	pf_->sensorUpdate(convert_scan(*msg), lx, ly, lt, inv);
+	pf_->sensorUpdate(convert_scan(*msg), lx, ly, lt, inv, !is_moving);
 
-	for (; odom_index < odom_history_.size(); odom_index++) {
-		const auto& odom = odom_history_[odom_index];
-		pf_->motionUpdate(odom.x, odom.y, odom.t);
-	}
-	
-	odom_history_.clear();
 	last_mcl_ = *pf_;
 
-	RCLCPP_INFO(get_logger(), "cbScan end");
+	for (const auto& odom : odom_history_) {
+		pf_->motionUpdate(odom.pose);
+	}
 }
 
 void EMcl2Node::initialPoseReceived(geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg)
@@ -157,11 +153,9 @@ void EMcl2Node::initialPoseReceived(geometry_msgs::msg::PoseWithCovarianceStampe
 	init_t_ = tf2::getYaw(msg->pose.pose.orientation);
 }
 
-void EMcl2Node::loop(void)
+void EMcl2Node::cbOdom(const nav_msgs::msg::Odometry::ConstSharedPtr msg)
 {
 	if (pf_ == nullptr) return;
-
-	RCLCPP_INFO(get_logger(), "loop");
 
 	if(init_request_){
 		last_mcl_.reset();
@@ -174,19 +168,38 @@ void EMcl2Node::loop(void)
 		simple_reset_request_ = false;
 	}
 
-	double x, y, t;
-	if(not getOdomPose(x, y, t)){
-		RCLCPP_INFO(get_logger(), "can't get odometry info");
+	if (prev_odom_msg_ == nullptr) {
+		prev_odom_msg_ = msg;
 		return;
 	}
-	odom_history_.push_back({get_clock()->now(), x, y, t});
-	pf_->motionUpdate(x, y, t);
+	
+	double dt = (rclcpp::Time(msg->header.stamp) - rclcpp::Time(prev_odom_msg_->header.stamp)).seconds();
 
+	prev_odom_msg_ = msg;
+	
+	Pose odom{msg->pose.pose.position.x, msg->pose.pose.position.y, tf2::getYaw(msg->pose.pose.orientation)};
+
+	bool is_moving = false;
+	if (prev_odom_.has_value()) {
+		auto linear_max = get_parameter("expansion_max_linear_velocity").as_double();
+		auto angular_max = get_parameter("expansion_max_angular_velocity").as_double();
+		auto diff = odom - *prev_odom_;
+		auto linear_speed = std::hypot(diff.x_, diff.y_) / dt;
+		auto angular_speed = std::abs(diff.t_) / dt;
+		// RCLCPP_INFO(get_logger(), "linear: %7.3lf angular: %7.3lf", linear_speed, angular_speed);
+		is_moving = linear_speed > linear_max || angular_speed > angular_max;
+	}
+	prev_odom_ = odom;
+	odom_history_.push_back({get_clock()->now(), odom, is_moving});
+
+	pf_->motionUpdate(odom);
+
+	Pose mean;
 	double x_var, y_var, t_var, xy_cov, yt_cov, tx_cov;
-	pf_->meanPose(x, y, t, x_var, y_var, t_var, xy_cov, yt_cov, tx_cov);
+	pf_->meanPose(mean, x_var, y_var, t_var, xy_cov, yt_cov, tx_cov);
 
-	publishOdomFrame(x, y, t);
-	publishPose(x, y, t, x_var, y_var, t_var, xy_cov, yt_cov, tx_cov);
+	publishOdomFrame(mean);
+	publishPose(mean, x_var, y_var, t_var, xy_cov, yt_cov, tx_cov);
 	publishParticles();
 
 	std_msgs::msg::Float32 alpha_msg;
@@ -194,15 +207,15 @@ void EMcl2Node::loop(void)
 	alpha_pub_->publish(alpha_msg);
 }
 
-void EMcl2Node::publishPose(double x, double y, double t,
+void EMcl2Node::publishPose(Pose pose,
 			double x_dev, double y_dev, double t_dev,
 			double xy_cov, double yt_cov, double tx_cov)
 {
 	geometry_msgs::msg::PoseWithCovarianceStamped p;
 	p.header.frame_id = global_frame_id_;
 	p.header.stamp = get_clock()->now();
-	p.pose.pose.position.x = x;
-	p.pose.pose.position.y = y;
+	p.pose.pose.position.x = pose.x_;
+	p.pose.pose.position.y = pose.y_;
 
 	p.pose.covariance[6*0 + 0] = x_dev;
 	p.pose.covariance[6*1 + 1] = y_dev;
@@ -216,19 +229,19 @@ void EMcl2Node::publishPose(double x, double y, double t,
 	p.pose.covariance[6*2 + 1] = yt_cov;
 	
 	tf2::Quaternion q;
-	q.setRPY(0, 0, t);
+	q.setRPY(0, 0, pose.t_);
 	tf2::convert(q, p.pose.pose.orientation);
 
 	pose_pub_->publish(p);
 }
 
-void EMcl2Node::publishOdomFrame(double x, double y, double t)
+void EMcl2Node::publishOdomFrame(Pose pose)
 {
 	geometry_msgs::msg::PoseStamped odom_to_map;
 	try{
 		tf2::Quaternion q;
-		q.setRPY(0, 0, t);
-		tf2::Transform tmp_tf(q, tf2::Vector3(x, y, 0.0));
+		q.setRPY(0, 0, pose.t_);
+		tf2::Transform tmp_tf(q, tf2::Vector3(pose.x_, pose.y_, 0.0));
 
 		geometry_msgs::msg::PoseStamped tmp_tf_stamped;
 		tmp_tf_stamped.header.frame_id = footprint_frame_id_;
