@@ -46,20 +46,17 @@ public:
 	double alpha_;
 
 private:
-	std::optional<Pose> last_odom_;
-	std::optional<Pose> prev_odom_;
+	std::optional<Pose> last_odom_, prev_odom_;
+	std::shared_ptr<const LikelihoodFieldMap> map_;
+	OdomModel odom_model_;
 
 	double normalizeAngle(double t);
 	void resampling(void);
 	double normalizeBelief(void);
 	void resetWeight(void);
-
-	OdomModel odom_model_;
-	std::shared_ptr<const LikelihoodFieldMap> map_;
-
 	void expansionReset(void);
 
-	double nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan);
+	// double nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan);
 };
 
 }

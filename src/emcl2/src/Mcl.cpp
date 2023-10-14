@@ -90,21 +90,21 @@ void Mcl::sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t
 	}
 }
 
-double Mcl::nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan)
-{
-	static uint16_t shift = 0;
-	int counter = 0;
-	int penetrating = 0;
-	for(int i=shift%skip; i<particles_.size(); i+=skip){
-		counter++;
-		if(particles_[i].wallConflict(map, scan, range_threshold, sensor_reset))
-			penetrating++;
-	}
-	shift++;
+// double Mcl::nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan)
+// {
+// 	static uint16_t shift = 0;
+// 	int counter = 0;
+// 	int penetrating = 0;
+// 	for(int i=shift%skip; i<particles_.size(); i+=skip){
+// 		counter++;
+// 		if(particles_[i].wallConflict(map, scan, range_threshold, sensor_reset))
+// 			penetrating++;
+// 	}
+// 	shift++;
 
-	std::cout << penetrating << " " << counter << std::endl;
-	return (double)(counter - penetrating) / counter;
-}
+// 	std::cout << penetrating << " " << counter << std::endl;
+// 	return (double)(counter - penetrating) / counter;
+// }
 
 void Mcl::expansionReset(void)
 {
