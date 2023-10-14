@@ -26,7 +26,7 @@ Scan& Scan::operator=(const Scan &s)
 	return *this;
 }
 
-int Scan::countValidBeams(double *rate)
+int Scan::countValidBeams(double *rate) const
 {
 	int ans = 0;
 	for(int i=0; i<ranges_.size(); i+=scan_increment_)
@@ -39,7 +39,7 @@ int Scan::countValidBeams(double *rate)
 	return ans;
 }
 
-bool Scan::valid(double range)
+bool Scan::valid(double range) const
 {
 	if( std::isnan(range) or std::isinf(range) )
 		return false;

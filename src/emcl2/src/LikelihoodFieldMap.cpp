@@ -4,6 +4,7 @@
 
 #include "emcl/LikelihoodFieldMap.h"
 #include "emcl/Pose.h"
+#include <limits>
 #include <random>
 #include <algorithm>
 
@@ -19,64 +20,20 @@ LikelihoodFieldMap::LikelihoodFieldMap(const nav_msgs::msg::OccupancyGrid &map, 
 
 	resolution_ = map.info.resolution;
 
-	for(int x=0; x<width_; x++){
-		likelihoods_.push_back(new double[height_]);
+	likelihoods_.resize(width_ * height_, 0.0);
 
-		for(int y=0; y<height_; y++)
-			likelihoods_[x][y] = 0.0;
-	}
-
-	for(int x=0; x<width_; x++)
-		for(int y=0; y<height_; y++){
+	for(int y=0; y<height_; y++) {
+		for(int x=0; x<width_; x++){
 			int v = map.data[x + y*width_];
 			if(v > 50)
 				setLikelihood(x, y, likelihood_range);
 			else if(0 <= v and v <= 50)
 				free_cells_.push_back(std::pair<int, int>(x,y));
 		}
+	}
 
 	normalize();
-}
-
-LikelihoodFieldMap::LikelihoodFieldMap(const LikelihoodFieldMap& rhs) {
-	*this = rhs;
-}
-
-LikelihoodFieldMap& LikelihoodFieldMap::operator=(const LikelihoodFieldMap& rhs) {
-	width_ = rhs.width_;
-	height_ = rhs.height_;
-	origin_x_ = rhs.origin_x_;
-	origin_y_ = rhs.origin_y_;
-	resolution_ = rhs.resolution_;
-	for(auto &e : likelihoods_)
-		delete [] e;
-	likelihoods_.clear();
-	for(int x=0; x<width_; x++) {
-		likelihoods_.push_back(new double[height_]);
-		for(int y=0; y<height_; y++) {
-			likelihoods_[x][y] = rhs.likelihoods_[x][y];
-		}
-	}
-	free_cells_ = rhs.free_cells_;
-	return *this;
-}
-
-LikelihoodFieldMap::~LikelihoodFieldMap()
-{
-	for(auto &e : likelihoods_)
-		delete [] e;
-}
-
-
-double LikelihoodFieldMap::likelihood(double x, double y)
-{
-	int ix = (int)floor((x - origin_x_)/resolution_);
-	int iy = (int)floor((y - origin_y_)/resolution_);
-
-	if(ix < 0 or iy < 0 or ix >= width_ or iy >= height_)
-		return 0.0;
-
-	return likelihoods_[ix][iy];
+	updateDistanceField();
 }
 
 void LikelihoodFieldMap::setLikelihood(int x, int y, double range)
@@ -89,7 +46,7 @@ void LikelihoodFieldMap::setLikelihood(int x, int y, double range)
 	for(int i=-cell_num; i<=cell_num; i++)
 		for(int j=-cell_num; j<=cell_num; j++)
 			if(i+x >= 0 and j+y >= 0 and i+x < width_ and j+y < height_)
-				likelihoods_[i+x][j+y] = std::max(likelihoods_[i+x][j+y], 
+				likelihoods_[getIndex(i+x, j+y)] = std::max(likelihoods_[getIndex(i+x, j+y)], 
 			                         std::min(weights[abs(i)], weights[abs(j)]));
 }
 
@@ -98,14 +55,44 @@ void LikelihoodFieldMap::normalize(void)
 	double maximum = 0.0;
 	for(int x=0; x<width_; x++)
 		for(int y=0; y<height_; y++)
-			maximum = std::max(likelihoods_[x][y], maximum);
+			maximum = std::max(likelihoods_[getIndex(x, y)], maximum);
 
 	for(int x=0; x<width_; x++)
 		for(int y=0; y<height_; y++)
-			likelihoods_[x][y] /= maximum;
+			likelihoods_[getIndex(x, y)] /= maximum;
 }
 
-void LikelihoodFieldMap::drawFreePoses(int num, std::vector<Pose> &result)
+void LikelihoodFieldMap::updateDistanceField(void) {
+	int r = 50;
+	distance_field_.resize(width_ * height_, r * resolution_);
+	
+	std::vector<double> hypot_lut;
+	hypot_lut.resize(width_ * height_);
+	for(int y = 0; y < height_; y++) {
+		for (int x = 0; x < width_; x++) {
+			hypot_lut[getIndex(x, y)] = std::max(std::hypot(x * resolution_, y * resolution_), resolution_);
+		}
+	}
+
+	for (int y = 0; y < height_; y++) {
+		for (int x = 0; x < width_; x++) {
+			if (likelihoods_[getIndex(x, y)] > 0.99) {
+				const int yy_s = std::max(0, y - r);
+				const int yy_e = std::min(height_, y + r);
+				for (int yy = yy_s; yy < yy_e; yy++) {
+					const int xx_s = std::max(0, x - r);
+					const int xx_e = std::min(width_, x + r);
+					for (int xx = xx_s; xx < xx_e; xx++) {
+						const int idx = getIndex(xx, yy);
+						distance_field_[idx] = std::min(hypot_lut[getIndex(std::abs(xx - x), std::abs(yy - y))], distance_field_[idx]);
+					}
+				}
+			}
+		}
+	}
+}
+
+void LikelihoodFieldMap::drawFreePoses(int num, std::vector<Pose> &result) const
 {
 	std::random_device seed_gen;
 	std::mt19937 engine{seed_gen()};

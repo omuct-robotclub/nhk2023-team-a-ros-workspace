@@ -28,8 +28,8 @@ public:
 	std::vector<uint16_t> directions_16bit_;
 
 	Scan& operator=(const Scan &s);
-	int countValidBeams(double *rate = NULL);
-	bool valid(double range);
+	int countValidBeams(double *rate = NULL) const;
+	bool valid(double range) const;
 };
 
 }

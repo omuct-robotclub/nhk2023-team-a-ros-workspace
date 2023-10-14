@@ -15,7 +15,7 @@ Particle::Particle(double x, double y, double t, double w) : p_(x, y, t)
 	w_ = w;
 }
 
-double Particle::likelihood(LikelihoodFieldMap *map, Scan &scan)
+double Particle::likelihood(const LikelihoodFieldMap& map, const Scan &scan)
 {
 	uint16_t t = p_.get16bitRepresentation();
 	double lidar_x = p_.x_ + scan.lidar_pose_x_*Mcl::cos_[t] 
@@ -32,12 +32,12 @@ double Particle::likelihood(LikelihoodFieldMap *map, Scan &scan)
 		double lx = lidar_x + scan.ranges_[i] * Mcl::cos_[a];
 		double ly = lidar_y + scan.ranges_[i] * Mcl::sin_[a];
 
-		ans += map->likelihood(lx, ly);
+		ans += map.likelihood(lx, ly);
 	}
 	return ans;
 }
 
-bool Particle::wallConflict(LikelihoodFieldMap *map, Scan &scan, double threshold, bool replace)
+bool Particle::wallConflict(const LikelihoodFieldMap& map, const Scan &scan, double threshold, bool replace)
 {
 	uint16_t t = p_.get16bitRepresentation();
 	double lidar_x = p_.x_ + scan.lidar_pose_x_*Mcl::cos_[t]
@@ -46,8 +46,9 @@ bool Particle::wallConflict(LikelihoodFieldMap *map, Scan &scan, double threshol
 				+ scan.lidar_pose_y_*Mcl::cos_[t];
 	uint16_t lidar_yaw = Pose::get16bitRepresentation(scan.lidar_pose_yaw_);
 
+	const bool reverse = rand()%2;
 	std::vector<int> order;
-	if(rand()%2){
+	if(reverse){
 		for(int i=0;i<scan.ranges_.size();i+=scan.scan_increment_)
 			order.push_back(i);
 	}else{
@@ -90,21 +91,40 @@ bool Particle::wallConflict(LikelihoodFieldMap *map, Scan &scan, double threshol
 }
 
 bool Particle::isPenetrating(double ox, double oy, double range, uint16_t direction,
-		LikelihoodFieldMap *map, double &hit_lx, double &hit_ly)
+		const LikelihoodFieldMap& map, double &hit_lx, double &hit_ly)
 {
+	// bool hit = false;
+	// for(double d=map.resolution_;d<range;d+=map.resolution_){
+	// 	double lx = ox + d * Mcl::cos_[direction];
+	// 	double ly = oy + d * Mcl::sin_[direction];
+
+	// 	if((not hit) and map.likelihood(lx, ly) > 0.99){
+	// 		hit = true;
+	// 		hit_lx = lx;
+	// 		hit_ly = ly;
+	// 	}
+	// 	else if(hit and map.likelihood(lx, ly) == 0.0){ // openspace after hit
+	// 		return true; // penetration
+	// 	}
+	// }
+	// return false;
 	bool hit = false;
-	for(double d=map->resolution_;d<range;d+=map->resolution_){
+	double d = map.safe_distance(ox, oy);
+	while (true) {
 		double lx = ox + d * Mcl::cos_[direction];
 		double ly = oy + d * Mcl::sin_[direction];
 
-		if((not hit) and map->likelihood(lx, ly) > 0.99){
+		if((not hit) and map.likelihood(lx, ly) > 0.99){
 			hit = true;
 			hit_lx = lx;
 			hit_ly = ly;
 		}
-		else if(hit and map->likelihood(lx, ly) == 0.0){ // openspace after hit
+		else if(hit and map.likelihood(lx, ly) == 0.0){ // openspace after hit
 			return true; // penetration
 		}
+
+		d += map.safe_distance(lx, ly);
+		if (!map.contains(lx, ly) || d > range) break;
 	}
 	return false;
 }

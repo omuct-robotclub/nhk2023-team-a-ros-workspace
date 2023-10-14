@@ -12,8 +12,8 @@
 namespace emcl2 {
 
 ExpResetMcl2::ExpResetMcl2(const Pose &p, int num,
-				const std::shared_ptr<OdomModel> &odom_model,
-				const std::shared_ptr<LikelihoodFieldMap> &map,
+				const OdomModel& odom_model,
+				const std::shared_ptr<const LikelihoodFieldMap> map,
 				double alpha_th, 
 				double expansion_radius_position, double expansion_radius_orientation,
 				double extraction_rate, double range_threshold, bool sensor_reset)
@@ -27,12 +27,9 @@ ExpResetMcl2::ExpResetMcl2(const Pose &p, int num,
 {
 }
 
-ExpResetMcl2::~ExpResetMcl2()
-{
-}
-
 void ExpResetMcl2::sensorUpdate(const sensor_msgs::msg::LaserScan& msg, double lidar_x, double lidar_y, double lidar_t, bool inv)
 {
+	const auto logger = rclcpp::get_logger("exp_reset_mcl2");
 	Scan scan = scan_from_msg(msg);
 
 	scan.lidar_pose_x_ = lidar_x;
@@ -58,24 +55,34 @@ void ExpResetMcl2::sensorUpdate(const sensor_msgs::msg::LaserScan& msg, double l
 		return;
 
 	for(auto &p : particles_)
-		p.w_ *= p.likelihood(map_.get(), scan);
+		p.w_ *= p.likelihood(*map_, scan);
 
-	alpha_ = nonPenetrationRate( (int)(particles_.size()*extraction_rate_), map_.get(), scan);
-	// RCLCPP_INFO(rclcpp::get_logger("exp_reset_mcl2"), "ALPHA: %f / %f", alpha_, alpha_threshold_);
-	if(alpha_ < alpha_threshold_){
-		// RCLCPP_INFO(rclcpp::get_logger("exp_reset_mcl2"), "RESET");
-		expansionReset();
-		for(auto &p : particles_)
-			p.w_ *= p.likelihood(map_.get(), scan);
+	RCLCPP_INFO(logger, "non penetration rate begin");
+	if (alpha_threshold_ > 0.0) {
+		// alpha_ = nonPenetrationRate( (int)(particles_.size()*extraction_rate_), *map_, scan);
+		alpha_ = normalizeBelief()/valid_beams;
+		RCLCPP_INFO(logger, "ALPHA: %f / %f", alpha_, alpha_threshold_);
+		if(alpha_ < alpha_threshold_){
+			RCLCPP_INFO(logger, "RESET");
+			expansionReset();
+			for(auto &p : particles_)
+				p.w_ *= p.likelihood(*map_, scan);
+		}
 	}
 
-	if(normalizeBelief() > 0.000001)
+	if(normalizeBelief() > 0.000001) {
+		RCLCPP_INFO(logger, "resampling begin");
 		resampling();
-	else
+		RCLCPP_INFO(logger, "resampling end");
+	}
+	else {
+		RCLCPP_INFO(logger, "reset weight begin");
 		resetWeight();
+		RCLCPP_INFO(logger, "reset weight end");
+	}
 }
 
-double ExpResetMcl2::nonPenetrationRate(int skip, LikelihoodFieldMap *map, Scan &scan)
+double ExpResetMcl2::nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan)
 {
 	static uint16_t shift = 0;
 	int counter = 0;

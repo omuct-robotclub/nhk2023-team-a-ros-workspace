@@ -7,6 +7,7 @@
 #include <vector>
 #include <sstream>
 #include <random>
+#include <optional>
 
 #include "emcl/Particle.h"
 #include "emcl/OdomModel.h"
@@ -20,14 +21,9 @@ namespace emcl2 {
 class Mcl
 {
 public: 
-	Mcl(){}
 	Mcl(const Pose &p, int num,
-			const std::shared_ptr<OdomModel> &odom_model,
-			const std::shared_ptr<LikelihoodFieldMap> &map);
-	Mcl(const Mcl& rhs);
-	~Mcl();
-
-	Mcl& operator=(const Mcl& rhs);
+			const OdomModel &odom_model,
+			const std::shared_ptr<const LikelihoodFieldMap> map);
 
 	std::vector<Particle> particles_;
 	double alpha_;
@@ -49,18 +45,16 @@ public:
 	Scan scan_from_msg(const sensor_msgs::msg::LaserScan& msg);
 
 protected:
-	Pose *last_odom_ = nullptr;
-	Pose *prev_odom_ = nullptr;
-
-	// Scan scan_;
+	std::optional<Pose> last_odom_;
+	std::optional<Pose> prev_odom_;
 
 	double normalizeAngle(double t);
 	void resampling(void);
 	double normalizeBelief(void);
 	void resetWeight(void);
 
-	std::shared_ptr<OdomModel> odom_model_;
-	std::shared_ptr<LikelihoodFieldMap> map_;
+	OdomModel odom_model_;
+	std::shared_ptr<const LikelihoodFieldMap> map_;
 };
 
 }

@@ -16,17 +16,17 @@ class Particle
 public:
 	Particle(double x, double y, double t, double w);
 
-	double likelihood(LikelihoodFieldMap *map, Scan &scan);
-	bool wallConflict(LikelihoodFieldMap *map, Scan &scan, double threshold, bool replace);
+	double likelihood(const LikelihoodFieldMap& map, const Scan &scan);
+	bool wallConflict(const LikelihoodFieldMap& map, const Scan &scan, double threshold, bool replace);
 	Pose p_;
 	double w_;
 
 	Particle operator =(const Particle &p);
 private:
 	bool isPenetrating(double ox, double oy, double range, uint16_t direction, 
-			LikelihoodFieldMap *map, double &hit_lx, double &hit_ly);
+			const LikelihoodFieldMap& map, double &hit_lx, double &hit_ly);
 
-	bool checkWallConflict(LikelihoodFieldMap *map, double ox, double oy, 
+	bool checkWallConflict(const LikelihoodFieldMap& map, double ox, double oy, 
 			double range, uint16_t direction, double threshold, bool replace);
 
 	void sensorReset(double ox, double oy,

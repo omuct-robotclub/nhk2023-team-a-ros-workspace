@@ -25,14 +25,11 @@ class EMcl2Node : public rclcpp::Node
 {
 public:
 	EMcl2Node();
-	~EMcl2Node();
 
 	void loop(void);
-	int getOdomFreq(void);
+
 private:
 	std::shared_ptr<ExpResetMcl2> pf_;
-	// ros::NodeHandle nh_;
-	// ros::NodeHandle private_nh_;
 
 	rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particlecloud_pub_;
 	rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
@@ -48,10 +45,7 @@ private:
 	std::string footprint_frame_id_;
 	std::string global_frame_id_;
 	std::string odom_frame_id_;
-	// std::string scan_frame_id_;
 	std::string base_frame_id_;
-
-	// std_msgs::msg::Header scan_header_;
 	
 	std::shared_ptr<tf2_ros::TransformBroadcaster> tfb_;
 	std::shared_ptr<tf2_ros::TransformListener> tfl_;
@@ -60,7 +54,7 @@ private:
 	nav_msgs::msg::OccupancyGrid::ConstSharedPtr map_;
 	tf2::Transform latest_tf_;
 
-	int odom_freq_;
+	double odom_freq_;
 	bool init_request_;
 	bool simple_reset_request_;
 	double init_x_, init_y_, init_t_;
@@ -82,10 +76,9 @@ private:
 	bool getOdomPose(double& x, double& y, double& yaw);
 	bool getLidarPose(const std_msgs::msg::Header& header, double& x, double& y, double& yaw, bool& inv);
 
-	void initCommunication(void);
 	void initPF(void);
 	std::shared_ptr<LikelihoodFieldMap> initMap(void);
-	std::shared_ptr<OdomModel> initOdometry(void);
+	OdomModel getOdomModel(void);
 
 	void cbMap(nav_msgs::msg::OccupancyGrid::ConstSharedPtr msg);
 	void cbScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr msg);

@@ -15,32 +15,19 @@
 
 namespace emcl2 {
 
-EMcl2Node::EMcl2Node() : Node("emcl2")
+EMcl2Node::EMcl2Node()
+		: Node("emcl2"),
+			init_request_{false},
+			simple_reset_request_{false}
 {
 	using namespace std::chrono_literals;
-	initCommunication();
-
-	odom_freq_ = declare_parameter("odom_freq", 50);
-
-	init_request_ = false;
-	simple_reset_request_ = false;
-
-	wall_timer_ = create_wall_timer(1s / odom_freq_, std::bind(&EMcl2Node::loop, this));
-}
-
-EMcl2Node::~EMcl2Node()
-{
-}
-
-void EMcl2Node::initCommunication(void)
-{
 	using namespace std::placeholders;
-	tfb_.reset(new tf2_ros::TransformBroadcaster(*this));
-	tf_.reset(new tf2_ros::Buffer(this->get_clock()));
-	tfl_.reset(new tf2_ros::TransformListener(*tf_));
+
+	tfb_ = std::make_shared<tf2_ros::TransformBroadcaster>(*this);
+	tf_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+	tfl_ = std::make_shared<tf2_ros::TransformListener>(*tf_);
 
 	std::vector<std::string> scan_topics = declare_parameter("scan_topics", std::vector<std::string>({"scan"}));
-
 	for (const auto& topic : scan_topics) {
 		laser_scan_subs_[topic] = create_subscription<sensor_msgs::msg::LaserScan>(topic, rclcpp::SensorDataQoS(), std::bind(&EMcl2Node::cbScan, this, _1));
 	}
@@ -65,12 +52,27 @@ void EMcl2Node::initCommunication(void)
 	declare_parameter("odom_fw_dev_per_rot", 0.0001);
 	declare_parameter("odom_rot_dev_per_fw", 0.13);
 	declare_parameter("odom_rot_dev_per_rot", 0.2);
+
+	declare_parameter("initial_pose_x", 0.0);
+	declare_parameter("initial_pose_y", 0.0);
+	declare_parameter("initial_pose_a", 0.0);
+
+	declare_parameter("alpha_threshold", 0.5);
+	declare_parameter("expansion_radius_position", 0.1);
+	declare_parameter("expansion_radius_orientation", 0.2);
+
+	declare_parameter("extraction_rate", 0.1);
+	declare_parameter("range_threshold", 0.1);
+	declare_parameter("sensor_reset", true);
+
+	double odom_freq = declare_parameter("odom_freq", 50.0);
+	wall_timer_ = create_wall_timer(1s / odom_freq, std::bind(&EMcl2Node::loop, this));
 }
+
 
 void EMcl2Node::initPF(void)
 {
 	std::shared_ptr<LikelihoodFieldMap> map = initMap();
-	std::shared_ptr<OdomModel> om = initOdometry();
 
 	Pose init_pose;
 	init_pose.x_ = declare_parameter("initial_pose_x", 0.0);
@@ -81,30 +83,30 @@ void EMcl2Node::initPF(void)
 	double alpha_th;
 	double ex_rad_pos, ex_rad_ori;
 	num_particles = get_parameter("num_particles").as_int();
-	alpha_th = declare_parameter("alpha_threshold", 0.5);
-	ex_rad_pos = declare_parameter("expansion_radius_position", 0.1);
-	ex_rad_ori = declare_parameter("expansion_radius_orientation", 0.2);
+	alpha_th = get_parameter("alpha_threshold").as_double();
+	ex_rad_pos = get_parameter("expansion_radius_position").as_double();
+	ex_rad_ori = get_parameter("expansion_radius_orientation").as_double();
 
 	double extraction_rate, range_threshold;
 	bool sensor_reset;
-	extraction_rate = declare_parameter("extraction_rate", 0.1);
-	range_threshold = declare_parameter("range_threshold", 0.1);
-	sensor_reset = declare_parameter("sensor_reset", true);
+	extraction_rate = get_parameter("extraction_rate").as_double();
+	range_threshold = get_parameter("range_threshold").as_double();
+	sensor_reset = get_parameter("sensor_reset").as_bool();
 
-	pf_.reset(new ExpResetMcl2(
-		init_pose, num_particles, om, map,
+	pf_ = std::make_shared<ExpResetMcl2>(
+		init_pose, num_particles, getOdomModel(), map,
 		alpha_th, ex_rad_pos, ex_rad_ori,
-		extraction_rate, range_threshold, sensor_reset));
+		extraction_rate, range_threshold, sensor_reset);
 }
 
-std::shared_ptr<OdomModel> EMcl2Node::initOdometry(void)
+OdomModel EMcl2Node::getOdomModel(void)
 {
 	double ff, fr, rf, rr;
 	ff = get_parameter("odom_fw_dev_per_fw").as_double();
 	fr = get_parameter("odom_fw_dev_per_rot").as_double();
 	rf = get_parameter("odom_rot_dev_per_fw").as_double();
 	rr = get_parameter("odom_rot_dev_per_rot").as_double();
-	return std::shared_ptr<OdomModel>(new OdomModel(ff, fr, rf, rr));
+	return OdomModel(ff, fr, rf, rr);
 }
 
 std::shared_ptr<LikelihoodFieldMap> EMcl2Node::initMap(void)
@@ -119,6 +121,8 @@ std::shared_ptr<LikelihoodFieldMap> EMcl2Node::initMap(void)
 void EMcl2Node::cbScan(sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
 {
 	if (pf_ == nullptr) return;
+
+	RCLCPP_INFO(get_logger(), "cbScan begin");
 
 	if (last_mcl_.has_value()) {
 		*pf_ = *last_mcl_;
@@ -149,6 +153,8 @@ void EMcl2Node::cbScan(sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
 	
 	odom_history_.clear();
 	last_mcl_ = *pf_;
+
+	RCLCPP_INFO(get_logger(), "cbScan end");
 }
 
 void EMcl2Node::initialPoseReceived(geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg)
@@ -163,7 +169,7 @@ void EMcl2Node::loop(void)
 {
 	if (pf_ == nullptr) return;
 
-	// RCLCPP_INFO(get_logger(), "loop");
+	RCLCPP_INFO(get_logger(), "loop");
 
 	if(init_request_){
 		last_mcl_.reset();
@@ -183,27 +189,6 @@ void EMcl2Node::loop(void)
 	}
 	odom_history_.push_back({get_clock()->now(), x, y, t});
 	pf_->motionUpdate(x, y, t);
-
-	// double lx, ly, lt;
-	// bool inv;
-	// if(not getLidarPose(lx, ly, lt, inv)){
-	// 	RCLCPP_INFO(get_logger(), "can't get lidar pose info");
-	// 	return;
-	// }
-
-	/*
-	struct timespec ts_start, ts_end;
-	clock_gettime(CLOCK_REALTIME, &ts_start);
-	*/
-	// pf_->sensorUpdate(lx, ly, lt, inv);
-	/*
-	clock_gettime(CLOCK_REALTIME, &ts_end);
-	struct tm tm;
-	localtime_r( &ts_start.tv_sec, &tm);
-	printf("START: %02d.%09ld\n", tm.tm_sec, ts_start.tv_nsec);
-	localtime_r( &ts_end.tv_sec, &tm);
-	printf("END: %02d.%09ld\n", tm.tm_sec, ts_end.tv_nsec);
-	*/
 
 	double x_var, y_var, t_var, xy_cov, yt_cov, tx_cov;
 	pf_->meanPose(x, y, t, x_var, y_var, t_var, xy_cov, yt_cov, tx_cov);
@@ -252,10 +237,9 @@ void EMcl2Node::publishOdomFrame(double x, double y, double t)
 		tf2::Quaternion q;
 		q.setRPY(0, 0, t);
 		tf2::Transform tmp_tf(q, tf2::Vector3(x, y, 0.0));
-				
+
 		geometry_msgs::msg::PoseStamped tmp_tf_stamped;
 		tmp_tf_stamped.header.frame_id = footprint_frame_id_;
-		// tmp_tf_stamped.header.stamp = scan_header_.stamp;
 		tmp_tf_stamped.header.stamp = rclcpp::Time(0);
 		tf2::toMsg(tmp_tf.inverse(), tmp_tf_stamped.pose);
 		
@@ -301,7 +285,6 @@ bool EMcl2Node::getOdomPose(double& x, double& y, double& yaw)
 	geometry_msgs::msg::PoseStamped ident;
 	ident.header.frame_id = footprint_frame_id_;
 	ident.header.stamp = rclcpp::Time(0);
-	// ident.header.stamp = scan_header_.stamp;
 	tf2::toMsg(tf2::Transform::getIdentity(), ident.pose);
 	
 	geometry_msgs::msg::PoseStamped odom_pose;
@@ -321,8 +304,6 @@ bool EMcl2Node::getOdomPose(double& x, double& y, double& yaw)
 bool EMcl2Node::getLidarPose(const std_msgs::msg::Header& header, double& x, double& y, double& yaw, bool& inv)
 {
 	geometry_msgs::msg::PoseStamped ident;
-	// ident.header.frame_id = scan_frame_id_;
-	// ident.header.stamp = rclcpp::Time(0);
 	ident.header = header;
 	tf2::toMsg(tf2::Transform::getIdentity(), ident.pose);
 	
@@ -330,7 +311,7 @@ bool EMcl2Node::getLidarPose(const std_msgs::msg::Header& header, double& x, dou
 	try{
 		this->tf_->transform(ident, lidar_pose, base_frame_id_);
 	}catch(tf2::TransformException e){
-    		RCLCPP_WARN(get_logger(), "Failed to compute lidar pose, skipping scan (%s)", e.what());
+    RCLCPP_WARN(get_logger(), "Failed to compute lidar pose, skipping scan (%s)", e.what());
 		return false;
 	}
 	x = lidar_pose.pose.position.x;
@@ -341,10 +322,6 @@ bool EMcl2Node::getLidarPose(const std_msgs::msg::Header& header, double& x, dou
 	inv = (fabs(pitch) > M_PI/2 || fabs(roll) > M_PI/2) ? true : false;
 
 	return true;
-}
-
-int EMcl2Node::getOdomFreq(void){
-	return odom_freq_;
 }
 
 bool EMcl2Node::cbSimpleReset(std_srvs::srv::Empty::Request::SharedPtr req, std_srvs::srv::Empty::Response::SharedPtr res)

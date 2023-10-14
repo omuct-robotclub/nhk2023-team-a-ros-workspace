@@ -4,6 +4,7 @@
 #ifndef POSE_H__
 #define POSE_H__
 
+#include <stdint.h>
 #include <sstream>
 
 namespace emcl2 {

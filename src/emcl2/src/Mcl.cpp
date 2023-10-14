@@ -16,9 +16,9 @@ double Mcl::cos_[(1<<16)];
 double Mcl::sin_[(1<<16)];
 
 Mcl::Mcl(const Pose &p, int num,
-		const std::shared_ptr<OdomModel> &odom_model,
-		const std::shared_ptr<LikelihoodFieldMap> &map)
-	: last_odom_(NULL), prev_odom_(NULL)
+		const OdomModel& odom_model,
+		const std::shared_ptr<const LikelihoodFieldMap> map)
+	: odom_model_{odom_model}
 {
 	odom_model_ = std::move(odom_model);
 	map_ = std::move(map);
@@ -36,26 +36,6 @@ Mcl::Mcl(const Pose &p, int num,
 		cos_[i] = std::cos(M_PI*i/(1<<15));
 		sin_[i] = std::sin(M_PI*i/(1<<15));
 	}
-}
-
-Mcl::Mcl(const Mcl& rhs) {
-	*this = rhs;
-}
-
-Mcl& Mcl::operator=(const Mcl& rhs) {
-	particles_ = rhs.particles_;
-	alpha_ = rhs.alpha_;
-	last_odom_ = rhs.last_odom_ ? new Pose(*rhs.last_odom_) : nullptr;
-	prev_odom_ = rhs.prev_odom_ ? new Pose(*rhs.prev_odom_) : nullptr;
-	odom_model_ = rhs.odom_model_ ? std::make_shared<OdomModel>(*rhs.odom_model_) : nullptr;
-	map_ = rhs.map_ ? std::make_shared<LikelihoodFieldMap>(*rhs.map_) : nullptr;
-	return *this;
-}
-
-Mcl::~Mcl()
-{
-	delete last_odom_;
-	delete prev_odom_;
 }
 
 void Mcl::resampling(void)
@@ -116,7 +96,7 @@ void Mcl::sensorUpdate(const sensor_msgs::msg::LaserScan& msg, double lidar_x, d
 		return;
 
 	for(auto &p : particles_)
-		p.w_ *= p.likelihood(map_.get(), scan);
+		p.w_ *= p.likelihood(*map_, scan);
 
 	/*
 	alpha_ = normalizeBelief()/valid_beams;
@@ -136,9 +116,9 @@ void Mcl::sensorUpdate(const sensor_msgs::msg::LaserScan& msg, double lidar_x, d
 
 void Mcl::motionUpdate(double x, double y, double t)
 {
-	if(last_odom_ == NULL){
-		last_odom_ = new Pose(x, y, t);
-		prev_odom_ = new Pose(x, y, t);
+	if(!last_odom_.has_value()){
+		last_odom_ = Pose(x, y, t);
+		prev_odom_ = Pose(x, y, t);
 		return;
 	}else
 		last_odom_->set(x, y, t);
@@ -150,11 +130,11 @@ void Mcl::motionUpdate(double x, double y, double t)
 	double fw_length = sqrt(d.x_*d.x_ + d.y_*d.y_);
 	double fw_direction = atan2(d.y_, d.x_) - prev_odom_->t_;
 
-	odom_model_->setDev(fw_length, d.t_);
+	odom_model_.setDev(fw_length, d.t_);
 
 	for(auto &p : particles_)
 		p.p_.move(fw_length, fw_direction, d.t_,
-			odom_model_->drawFwNoise(), odom_model_->drawRotNoise());
+			odom_model_.drawFwNoise(), odom_model_.drawRotNoise());
 
 	prev_odom_->set(*last_odom_);
 }
