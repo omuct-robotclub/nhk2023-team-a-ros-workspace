@@ -33,7 +33,7 @@ LikelihoodFieldMap::LikelihoodFieldMap(const nav_msgs::msg::OccupancyGrid &map, 
 	}
 
 	normalize();
-	// updateDistanceField();
+	updateDistanceField();
 }
 
 void LikelihoodFieldMap::setLikelihood(int x, int y, double range)
@@ -62,35 +62,35 @@ void LikelihoodFieldMap::normalize(void)
 			likelihoods_[getIndex(x, y)] /= maximum;
 }
 
-// void LikelihoodFieldMap::updateDistanceField(void) {
-// 	int r = 50;
-// 	distance_field_.resize(width_ * height_, r * resolution_);
+void LikelihoodFieldMap::updateDistanceField(void) {
+	int r = 50;
+	distance_field_.resize(width_ * height_, r * resolution_);
 	
-// 	std::vector<double> hypot_lut;
-// 	hypot_lut.resize(width_ * height_);
-// 	for(int y = 0; y < height_; y++) {
-// 		for (int x = 0; x < width_; x++) {
-// 			hypot_lut[getIndex(x, y)] = std::max(std::hypot(x * resolution_, y * resolution_), resolution_);
-// 		}
-// 	}
+	std::vector<double> hypot_lut;
+	hypot_lut.resize(width_ * height_);
+	for(int y = 0; y < height_; y++) {
+		for (int x = 0; x < width_; x++) {
+			hypot_lut[getIndex(x, y)] = std::max(std::hypot(x * resolution_, y * resolution_), resolution_);
+		}
+	}
 
-// 	for (int y = 0; y < height_; y++) {
-// 		for (int x = 0; x < width_; x++) {
-// 			if (likelihoods_[getIndex(x, y)] > 0.99) {
-// 				const int yy_s = std::max(0, y - r);
-// 				const int yy_e = std::min(height_, y + r);
-// 				for (int yy = yy_s; yy < yy_e; yy++) {
-// 					const int xx_s = std::max(0, x - r);
-// 					const int xx_e = std::min(width_, x + r);
-// 					for (int xx = xx_s; xx < xx_e; xx++) {
-// 						const int idx = getIndex(xx, yy);
-// 						distance_field_[idx] = std::min(hypot_lut[getIndex(std::abs(xx - x), std::abs(yy - y))], distance_field_[idx]);
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
-// }
+	for (int y = 0; y < height_; y++) {
+		for (int x = 0; x < width_; x++) {
+			if (likelihoods_[getIndex(x, y)] > 0.99) {
+				const int yy_s = std::max(0, y - r);
+				const int yy_e = std::min(height_, y + r);
+				for (int yy = yy_s; yy < yy_e; yy++) {
+					const int xx_s = std::max(0, x - r);
+					const int xx_e = std::min(width_, x + r);
+					for (int xx = xx_s; xx < xx_e; xx++) {
+						const int idx = getIndex(xx, yy);
+						distance_field_[idx] = std::min(hypot_lut[getIndex(std::abs(xx - x), std::abs(yy - y))], distance_field_[idx]);
+					}
+				}
+			}
+		}
+	}
+}
 
 void LikelihoodFieldMap::drawFreePoses(int num, std::vector<Pose> &result) const
 {

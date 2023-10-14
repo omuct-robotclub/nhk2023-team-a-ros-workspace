@@ -66,8 +66,8 @@ void Mcl::sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t
 		p.w_ *= p.likelihood(*map_, scan);
 
 	if (alpha_threshold > 0.0 && do_expansion_reset) {
-		// alpha_ = nonPenetrationRate( (int)(particles_.size()*extraction_rate_), *map_, scan);
-		alpha_ = normalizeBelief()/valid_beams;
+		alpha_ = nonPenetrationRate( (int)(particles_.size()*extraction_rate), *map_, scan);
+		// alpha_ = normalizeBelief()/valid_beams;
 		// RCLCPP_INFO(logger, "ALPHA: %f / %f", alpha_, alpha_threshold);
 		if(alpha_ < alpha_threshold){
 			// RCLCPP_INFO(logger, "RESET");
@@ -85,21 +85,29 @@ void Mcl::sensorUpdate(Scan scan, double lidar_x, double lidar_y, double lidar_t
 	}
 }
 
-// double Mcl::nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan)
-// {
-// 	static uint16_t shift = 0;
-// 	int counter = 0;
-// 	int penetrating = 0;
-// 	for(int i=shift%skip; i<particles_.size(); i+=skip){
-// 		counter++;
-// 		if(particles_[i].wallConflict(map, scan, range_threshold, sensor_reset))
-// 			penetrating++;
-// 	}
-// 	shift++;
+double Mcl::nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan)
+{
+	Pose mean;
+	double dummy;
+	meanPose(mean, dummy, dummy, dummy, dummy, dummy, dummy);
 
-// 	std::cout << penetrating << " " << counter << std::endl;
-// 	return (double)(counter - penetrating) / counter;
-// }
+	Particle center_particle{mean.x_, mean.y_, mean.t_, 1.0};
+	return center_particle.nonPenetrationRate(map, scan, range_threshold);
+
+	// center_particle.wallConflict(map, scan, double threshold, bool replace)
+	// static uint16_t shift = 0;
+	// int counter = 0;
+	// int penetrating = 0;
+	// for(int i=shift%skip; i<particles_.size(); i+=skip){
+	// 	counter++;
+	// 	if()
+	// 		penetrating++;
+	// }
+	// shift++;
+
+	// std::cout << penetrating << " " << counter << std::endl;
+	// return (double)(counter - penetrating) / counter;
+}
 
 void Mcl::expansionReset(void)
 {

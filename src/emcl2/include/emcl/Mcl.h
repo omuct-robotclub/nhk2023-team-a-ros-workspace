@@ -58,7 +58,7 @@ private:
 	void resetWeight(void);
 	void expansionReset(void);
 
-	// double nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan);
+	double nonPenetrationRate(int skip, const LikelihoodFieldMap& map, Scan &scan);
 };
 
 }

@@ -174,6 +174,8 @@ void EMcl2Node::cbOdom(const nav_msgs::msg::Odometry::ConstSharedPtr msg)
 	}
 	
 	double dt = (rclcpp::Time(msg->header.stamp) - rclcpp::Time(prev_odom_msg_->header.stamp)).seconds();
+	if (dt < 0.000001) 
+		return;
 
 	prev_odom_msg_ = msg;
 	
