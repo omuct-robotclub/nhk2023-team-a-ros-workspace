@@ -174,7 +174,8 @@ struct Feedback {
   enum class Tag : uint8_t {
     PARAM_EVENT,
     GET_PARAM_RESPONSE,
-    ODOMETRY,
+    VELOCITY,
+    POSE,
     HEARTBEAT,
     STEER_UNWIND_DONE,
     CURRENT_STATE,
@@ -193,10 +194,16 @@ struct Feedback {
     ParamValue value;
   } PROTOCOL_PACKED;
 
-  struct Odometry {
+  struct Velocity {
     int16_t vx; // 前方向の速度 [mm/s]
     int16_t vy; // 左方向の速度 [mm/s]
     int16_t ang_vel; // 上から見て半時計回り方向の角速度 [mrad/s] (ミリラジアン毎秒)
+  } PROTOCOL_PACKED;
+
+  struct Pose {
+    uint16_t x; // x座標 [mm]
+    uint16_t y; // y座標 [mm]
+    uint16_t yaw; // 向き [mrad]
   } PROTOCOL_PACKED;
 
   struct CurrentState {
@@ -221,8 +228,11 @@ struct Feedback {
     // `get_param`に対する返信
     GetParamResponse get_param_response;
 
-    // オドメトリの情報
-    Odometry odometry;
+    // 速度
+    Velocity odometry;
+
+    // 位置・姿勢
+    Pose position;
 
     CurrentState current_state;
 
