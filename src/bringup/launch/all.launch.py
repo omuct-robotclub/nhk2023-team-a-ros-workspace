@@ -16,12 +16,44 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("simulation", default_value="True"),
+            # Hardware
             Node(
                 package="can_bridge",
                 executable="can_bridge",
                 parameters=[config_dir / "can_bridge.yaml"],
                 condition=IfCondition(PythonExpression(["not ", simulation])),
             ),
+            Node(
+                package="ldlidar",
+                executable="ldlidar",
+                name="lidar0_node",
+                parameters=[
+                    {
+                        "serial_port_candidates": [
+                            "/dev/serial/by-path/pci-0000:00:14.0-usb-0:2.1:1.0-port0"
+                        ],
+                        "laser_frame_id": "lidar0_link",
+                    }
+                ],
+                remappings=[("scan", "scan0")],
+                condition=IfCondition(PythonExpression(["not ", simulation])),
+            ),
+            Node(
+                package="ldlidar",
+                executable="ldlidar",
+                name="lidar1_node",
+                parameters=[
+                    {
+                        "serial_port_candidates": [
+                            "/dev/serial/by-path/pci-0000:00:14.0-usb-0:2.1:1.0-port0"
+                        ],
+                        "laser_frame_id": "lidar0_link",
+                    }
+                ],
+                remappings=[("scan", "scan1")],
+                condition=IfCondition(PythonExpression(["not ", simulation])),
+            ),
+            # Navigation
             Node(
                 package="robot_state_publisher",
                 executable="robot_state_publisher",
@@ -38,11 +70,7 @@ def generate_launch_description():
             Node(
                 package="pfloc",
                 executable="pfloc",
-                parameters=[
-                    {
-                        "use_odom_pose": True
-                    }
-                ]
+                parameters=[{"use_odom_pose": True}],
             ),
             Node(
                 package="emcl2",
@@ -55,11 +83,15 @@ def generate_launch_description():
                 package="nav2_bt_navigator",
                 executable="bt_navigator",
                 parameters=[
-                    config_dir/"nav2.yaml",
+                    config_dir / "nav2.yaml",
                     {
-                        "default_nav_through_poses_bt_xml": str(bringup_dir / "behavior_tree" / "nav_through_poses.xml"),
-                        "default_nav_to_pose_bt_xml": str(bringup_dir / "behavior_tree" / "nav_to_pose.xml"),
-                    }
+                        "default_nav_through_poses_bt_xml": str(
+                            bringup_dir / "behavior_tree" / "nav_through_poses.xml"
+                        ),
+                        "default_nav_to_pose_bt_xml": str(
+                            bringup_dir / "behavior_tree" / "nav_to_pose.xml"
+                        ),
+                    },
                 ],
             ),
             Node(
