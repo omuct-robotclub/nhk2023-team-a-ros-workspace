@@ -10,28 +10,57 @@ from pathlib import Path
 def generate_launch_description():
     simulation = LaunchConfiguration("simulation")
 
-
     bringup_dir = Path(get_package_share_directory("bringup"))
     config_dir = bringup_dir / "config"
-    
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("simulation", default_value="True"),
-
             Node(
                 package="can_bridge",
                 executable="can_bridge",
                 parameters=[config_dir / "can_bridge.yaml"],
-                condition=IfCondition(PythonExpression(['not ', simulation]))
+                condition=IfCondition(PythonExpression(["not ", simulation])),
+            ),
+            Node(
+                package="robot_state_publisher",
+                executable="robot_state_publisher",
+                parameters=[
+                    {
+                        "robot_description": Command(
+                            f"xacro {bringup_dir/'urdf'/'robot.urdf.xacro'}"
+                        ),
+                        "publish_frequency": 100.0,
+                        "ignore_timestamp": True,
+                    }
+                ],
             ),
             Node(
                 package="pfloc",
                 executable="pfloc",
+                parameters=[
+                    {
+                        "use_odom_pose": True
+                    }
+                ]
             ),
             Node(
                 package="emcl2",
                 executable="emcl2_node",
                 parameters=[config_dir / "emcl2.yaml"],
+                remappings=[("odom", "odom_filtered")],
+            ),
+            # Navigation
+            Node(
+                package="nav2_bt_navigator",
+                executable="bt_navigator",
+                parameters=[
+                    config_dir/"nav2.yaml",
+                    {
+                        "default_nav_through_poses_bt_xml": str(bringup_dir / "behavior_tree" / "nav_through_poses.xml"),
+                        "default_nav_to_pose_bt_xml": str(bringup_dir / "behavior_tree" / "nav_to_pose.xml"),
+                    }
+                ],
             ),
             Node(
                 package="nav2_map_server",
@@ -58,41 +87,33 @@ def generate_launch_description():
                 ],
             ),
             Node(
-                package="nav2_costmap_2d",
-                executable="nav2_costmap_2d",
-                parameters=[
-                    config_dir/"nav2.yaml"
-                ]
+                package="nav2_planner",
+                executable="planner_server",
+                parameters=[config_dir / "nav2.yaml"],
+            ),
+            Node(
+                package="nav2_controller",
+                executable="controller_server",
+                parameters=[config_dir / "nav2.yaml"],
             ),
             Node(
                 package="nav2_lifecycle_manager",
                 executable="lifecycle_manager",
                 name="lifecycle_manager",
-                parameters=[{
-                    "node_names": ["map_server", "nav_map_server", "costmap/costmap"],
-                    "autostart": True,
-                }]
+                parameters=[
+                    {
+                        "node_names": [
+                            "bt_navigator",
+                            "map_server",
+                            "nav_map_server",
+                            "planner_server",
+                            "controller_server",
+                        ],
+                        "autostart": True,
+                    }
+                ],
             ),
-            Node(
-                package="laserscan_marger",
-                executable="laserscan_marger_node",
-                parameters=[{
-                    "scan_input_topics": ["scan0", "scan1"],
-                    "out_points": 2000,
-                    "publish_frequency": 10.0,
-                    "out_range_min": 0.5,
-                }],
-                remappings=[("scan_out", "scan")]
-            ),
-            Node(
-                package="robot_state_publisher",
-                executable="robot_state_publisher",
-                parameters=[{
-                    "robot_description": Command(f"xacro {bringup_dir/'urdf'/'robot.urdf.xacro'}"),
-                    "publish_frequency": 100.0,
-                    "ignore_timestamp": True,
-                }]
-            ),
+            # Connection
             Node(package="udp_multicast_beacon", executable="beacon"),
             Node(package="rosbridge_server", executable="rosbridge_websocket"),
         ]

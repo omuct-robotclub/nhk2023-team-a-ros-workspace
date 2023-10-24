@@ -50,6 +50,12 @@
             rosPkgs.urg_node
             rosPkgs.plotjuggler_ros
             rosPkgs.plotjuggler
+            rosPkgs.navigation2
+            rosPkgs.tf_transformations
+            rosPkgs.rmw_cyclonedds_cpp
+            pkgs.python310Packages.transforms3d
+            pkgs.xtensor
+            pkgs.xsimd
             pkgs.flann
             pkgs.gdb
             pkgs.clang-tools
@@ -63,6 +69,9 @@
             set +u
             unset COLCON_CURRENT_PREFIX
           '';
+
+          # RMW_IMPLEMENTATION="rmw_cyclonedds_cpp";
+          FASTRTPS_DEFAULT_PROFILES_FILE = ./fastdds.xml;
         };
       }
     );

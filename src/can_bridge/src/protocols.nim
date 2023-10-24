@@ -128,7 +128,8 @@ type
   RoboFeedbackKind* {.size: 1.} = enum
     PARAM_EVENT,
     GET_PARAM_RESPONSE,
-    ODOMETRY,
+    VELOCITY,
+    POSE,
     HEARTBEAT,
     STEER_UNWIND_DONE,
     CURRENT_STATE,
@@ -142,8 +143,11 @@ type
     id*: RoboParamId
     value*: RoboParamValue
 
-  OdometryObj* {.packed.} = object
+  VelocityObj* {.packed.} = object
     vx*, vy*, angVel*: int16
+  
+  PoseObj* {.packed.} = object
+    x*, y*, yaw*: uint16
 
   CurrentStateEnum* {.size: 1.} = enum
     Configuring
@@ -160,7 +164,8 @@ type
     case kind*: RoboFeedbackKind
     of PARAM_EVENT: paramEvent*: ParamEventObj
     of GET_PARAM_RESPONSE: getParamResponse*: GetParamResponseObj
-    of ODOMETRY: odometry*: OdometryObj
+    of VELOCITY: velocity*: VelocityObj
+    of POSE: pose*: PoseObj
     of HEARTBEAT: discard
     of STEER_UNWIND_DONE: discard
     of CURRENT_STATE: currentState*: CurrentStateObj

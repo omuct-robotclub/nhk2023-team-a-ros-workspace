@@ -5,11 +5,10 @@ import std/[options, strformat, strutils, tables, oserrors]
 import ./socketcan
 import vmath
 import ./protocols
-import ./objparamservers
 import tf2/[tfbuffers, msgconverters]
 import geonimetry
 
-importInterface geometry_msgs/msg/[twist, twist_stamped, vector3]
+importInterface geometry_msgs/msg/[twist, twist_stamped, vector3, quaternion]
 importInterface nav_msgs/msg/odometry, Odometry as OdometryMsg
 importInterface std_msgs/msg/[int8 as int8_msg, float64 as float64_msg, bool as bool_msg], bool_msg.Bool as BoolMsg
 importInterface std_srvs/srv/trigger
@@ -17,6 +16,13 @@ importInterface robot_interface/msg/steer_unit_states
 
 func toDurationSec(f: float): Duration =
   int(f*1e9).nanoseconds
+
+proc withTimeoutCancel[T](fut: Future[T], timeout: Duration): Future[bool] {.async.} =
+  if await withTimeout(fut, timeout):
+    return true
+  else:
+    await fut.cancelAndWait()
+    return fut.completed()
 
 type RoboState = enum
   Unknown
@@ -74,6 +80,13 @@ type CanBridgeNode = ref object
   presentAngVel: float
   targetLinearVel: Vec2
   targetAngVel: float
+
+  prevOdomLinearVel: Vector2d
+  prevOdomAngVel: float
+
+  prevPose: PoseObj
+  position: Vector2d
+  rotation: float
 
   cmdVelSub: Subscription[Twist]
   cmdVelStampedSub: Subscription[TwistStamped]
@@ -166,17 +179,16 @@ proc sendParameter(self; p: SetParamObj) {.async.} =
     self.logger.info "set parameter request sent"
     let fut = self.roboParamEventQueue.get()
     self.logger.info "waiting for response"
-    if await withTimeout(fut, 100.milliseconds):
+    if await withTimeoutCancel(fut, 100.milliseconds):
       let ev = fut.read()
       if ev.id == p.id:
         self.logger.info "set parameter success"
         break
       else:
         self.logger.warn "failed to sync parameter ", p.id
-        sleepAsync 100.milliseconds
+        await sleepAsync 100.milliseconds
     else:
       self.logger.info "response timed out"
-      fut.cancel()
 
 proc syncParameter(self; name: string, value: ParamValue) {.async.} =
   # TODO: refactor this shit
@@ -340,15 +352,26 @@ proc canReadLoop(self) {.async.} =
     case fb.kind
     of PARAM_EVENT: await self.roboParamEventQueue.put(fb.paramEvent)
     of GET_PARAM_RESPONSE: await self.roboGetParamResponseQueue.put(fb.getParamResponse)
-    of ODOMETRY:
+    of VELOCITY:
+      self.prevOdomLinearVel.x = float(fb.velocity.vx) * 1e-3
+      self.prevOdomLinearVel.y = float(fb.velocity.vy) * 1e-3
+      self.prevOdomAngVel = float(fb.velocity.angVel) * 1e-3
+    of POSE:
       var msg = OdometryMsg()
       msg.header.frameId = "odom"
       msg.header.stamp = self.node.clock.now().toMsg()
       msg.childFrameId = "base_footprint"
-      msg.twist.twist.linear.x = float(fb.odometry.vx) * 1e-3
-      msg.twist.twist.linear.y = float(fb.odometry.vy) * 1e-3
-      msg.twist.twist.angular.z = float(fb.odometry.angVel) * 1e-3
+      self.position.x += float(fb.pose.x - self.prevPose.x) * 1e-3
+      self.position.y += float(fb.pose.y - self.prevPose.y) * 1e-3
+      self.rotation = float(fb.pose.yaw) * 1e-3
+      msg.pose.pose.position.x = self.position.x
+      msg.pose.pose.position.y = self.position.y
+      msg.pose.pose.orientation = quatd(vector3d(0, 0, 1), self.rotation).to(Quaternion)
+      msg.twist.twist.linear.x = self.prevOdomLinearVel.x
+      msg.twist.twist.linear.y = self.prevOdomLinearVel.y
+      msg.twist.twist.angular.z = self.prevOdomAngVel
       self.odomPub.publish(msg)
+      self.prevPose = fb.pose
     of HEARTBEAT: discard
     of STEER_UNWIND_DONE: await self.roboSteerUnwindDoneQueue.put(true)
     of CURRENT_STATE:
@@ -375,7 +398,7 @@ proc canWriteLoop(self) {.async.} =
       let err = self.can.write(frame)
       if err.isErr:
         let e = err.tryError()
-        if e.OSErrorCode == ENOBUFS:
+        if e == ENOBUFS:
           if not self.noBufferSpaceHasWarned:
             self.logger.warn "Write error: No buffer space available"
             self.noBufferSpaceHasWarned = true

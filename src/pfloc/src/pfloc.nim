@@ -1,4 +1,5 @@
 import rclnim
+import rclnim/objparamservers
 import rclnim/chronossupport
 import chronos
 import std/math
@@ -20,8 +21,12 @@ type
     pos: Vec2
     yaw: float32
 
+  Parameters = object
+    use_odom_pose: bool
+
   PflocNode = ref object
     node: Node
+    params: ObjParamServer[Parameters]
     odomSub: Subscription[Odometry]
     odomFilteredPub: Publisher[Odometry]
     tfPub: Publisher[TFMessage]
@@ -37,6 +42,7 @@ proc new(_: typedesc[PflocNode]): PflocNode =
   result.odomSub = result.node.createSubscription(Odometry, "odom", SensorDataQoS)
   result.odomFilteredPub = result.node.createPublisher(Odometry, "odom_filtered", SensorDataQoS)
   result.tfPub = result.node.createPublisher(TFMessage, "/tf", SystemDefaultQoS.withPolicies(depth = 100))
+  result.params = result.node.createObjParamServer(Parameters())
 
 func quatFromAxisAngle*(x, y, z, angle: float): Quaternion =
   let d = sqrt(x * x + y * y + z * z)
@@ -54,20 +60,31 @@ proc loop(self: PflocNode) {.async.} =
   self.roboPose.pos += vel.xy * dtSec
   self.roboPose.yaw += self.lastOdom.twist.twist.angular.z * dtSec
 
+  let transform =
+    if self.params.value.use_odom_pose:
+      let p = self.lastOdom.pose.pose.position
+      Transform(
+        translation: Vector3(x: p.x, y: p.y, z: p.z),
+        rotation: self.lastOdom.pose.pose.orientation,
+      )
+    else:
+      Transform(
+        translation: Vector3(x: self.roboPose.pos.x, y: self.roboPose.pos.y),
+        rotation: quatFromAxisAngle(0, 0, 1, self.roboPose.yaw),
+      )
+
   var tf = TransformStamped(
     header: Header(frameId: "odom", stamp: self.node.clock.now().toMsg()),
     childFrameId: "base_footprint",
-    transform: Transform(
-      translation: Vector3(x: self.roboPose.pos.x, y: self.roboPose.pos.y),
-      rotation: quatFromAxisAngle(0, 0, 1, self.roboPose.yaw)
-    )
+    transform: transform
   )
   self.tfPub.publish(TFMessage(transforms: @[tf]))
 
   var filtered = self.lastOdom
-  filtered.pose.pose.position.x = self.roboPose.pos.x
-  filtered.pose.pose.position.y = self.roboPose.pos.y
-  filtered.pose.pose.orientation = quatFromAxisAngle(0, 0, 1, self.roboPose.yaw)
+  if not self.params.value.use_odom_pose:
+    filtered.pose.pose.position.x = self.roboPose.pos.x
+    filtered.pose.pose.position.y = self.roboPose.pos.y
+    filtered.pose.pose.orientation = quatFromAxisAngle(0, 0, 1, self.roboPose.yaw)
   self.odomFilteredPub.publish(filtered)
 
 proc run(self: PflocNode) {.async.} =

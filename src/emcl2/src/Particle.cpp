@@ -7,6 +7,8 @@
 #include "emcl/lookup_tables.h"
 #include <algorithm>
 #include <cmath>
+#include <rclcpp/logger.hpp>
+#include "rclcpp/logging.hpp"
 
 namespace emcl2 {
 using lut::sin_lut;
@@ -131,26 +133,34 @@ double Particle::nonPenetrationRate(const LikelihoodFieldMap& map, const Scan& s
 
 	int penetrating_beams = 0;
 
+	int penetrating = 0;
+	int not_penerating = 0;
+	int invalid = 0;
+
 	int hit_counter = 0;
 	int i = start_idx;
 	while(true){
 		switch (penetration_kind[i]) {
 			case PENETRATING:
+				penetrating++;
 				hit_counter++;
 				break;
 			case NOT_PENETRATING:
+				not_penerating++;
 				if(hit_counter*scan.angle_increment_ >= threshold){
 					penetrating_beams += hit_counter;
 				}
 				hit_counter = 0;
 				break;
 			case INVALID:
+				invalid++;
 				break;
 		}
 		i = (i + 1) % penetration_kind.size();
 		if (i == start_idx) break; 
 	}
-	return (double)(valid_beams - penetrating_beams) / valid_beams;
+	// RCLCPP_INFO(rclcpp::get_logger("mcl"), "penetrating: %d  not penetrating: %d  invalid: %d  hit: %d  valid: %d", penetrating, not_penerating, invalid, penetrating_beams, valid_beams);
+	return (double)(valid_beams - penetrating) / valid_beams;
 }
 
 bool Particle::isPenetrating(double ox, double oy, double range, uint16_t direction,
@@ -173,7 +183,7 @@ bool Particle::isPenetrating(double ox, double oy, double range, uint16_t direct
 	// return false;
 	bool hit = false;
 	double d = map.safe_distance(ox, oy);
-	while (true) {
+	while (d < range) {
 		double lx = ox + d * cos_lut[direction];
 		double ly = oy + d * sin_lut[direction];
 
@@ -186,8 +196,8 @@ bool Particle::isPenetrating(double ox, double oy, double range, uint16_t direct
 			return true; // penetration
 		}
 
+		// if (!map.contains(lx, ly)) break;
 		d += map.safe_distance(lx, ly);
-		if (!map.contains(lx, ly) || d > range) break;
 	}
 	return false;
 }
