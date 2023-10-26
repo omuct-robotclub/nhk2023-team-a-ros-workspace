@@ -15,13 +15,16 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("simulation", default_value="True"),
+            DeclareLaunchArgument("simulation", default_value="False"),
             # Hardware
             Node(
                 package="can_bridge",
                 executable="can_bridge",
                 parameters=[config_dir / "can_bridge.yaml"],
                 condition=IfCondition(PythonExpression(["not ", simulation])),
+                remappings=[(
+                    ("cmd_vel_stamped", "manual_cmd_vel")
+                )]
             ),
             Node(
                 package="ldlidar",
@@ -30,9 +33,9 @@ def generate_launch_description():
                 parameters=[
                     {
                         "serial_port_candidates": [
-                            "/dev/serial/by-path/pci-0000:00:14.0-usb-0:2.1:1.0-port0"
+                            "/dev/serial/by-path/pci-0000:00:14.0-usb-0:1.3.2:1.0-port0"
                         ],
-                        "laser_frame_id": "lidar0_link",
+                        "lidar_frame": "lidar0_link",
                     }
                 ],
                 remappings=[("scan", "scan0")],
@@ -45,9 +48,9 @@ def generate_launch_description():
                 parameters=[
                     {
                         "serial_port_candidates": [
-                            "/dev/serial/by-path/pci-0000:00:14.0-usb-0:2.1:1.0-port0"
+                            "/dev/serial/by-path/pci-0000:00:14.0-usb-0:1.3.3:1.0-port0"
                         ],
-                        "laser_frame_id": "lidar0_link",
+                        "lidar_frame": "lidar1_link",
                     }
                 ],
                 remappings=[("scan", "scan1")],
@@ -145,6 +148,10 @@ def generate_launch_description():
                     }
                 ],
             ),
+            # Node(
+            #     package="commander",
+            #     executable="commander",
+            # ),
             # Connection
             Node(package="udp_multicast_beacon", executable="beacon"),
             Node(package="rosbridge_server", executable="rosbridge_websocket"),
