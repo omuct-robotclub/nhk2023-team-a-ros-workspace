@@ -93,6 +93,7 @@ struct Command {
     UNWIND_STEER,
     SET_LARGE_WHEEL_CMD,
     ACTIVATE,
+    WALL_ALIGN_ASSIST,
   };
 
   Tag tag;
@@ -135,6 +136,10 @@ struct Command {
     int16_t cmd; // +正転 -逆転 32767が最大
   } PROTOCOL_PACKED;
 
+  struct WallAlignAssist {
+    uint16_t distance; // 目標壁との距離 [mm] 0のとき無効
+  } PROTOCOL_PACKED;
+
   union {
     // パラメータを取得する。
     GetParam get_param;
@@ -163,6 +168,9 @@ struct Command {
 
     //　段超え
     SetLargeWheelCmd set_large_wheel_cmd;
+
+    // 壁との距離を一定に保つ
+    WallAlignAssist wall_align_assist;
   };
 } PROTOCOL_PACKED;
 
@@ -180,6 +188,7 @@ struct Feedback {
     STEER_UNWIND_DONE,
     CURRENT_STATE,
     STEER_UNIT_STATE,
+    DETECTED_WALL,
   };
 
   Tag tag;
@@ -220,6 +229,11 @@ struct Feedback {
     int16_t angle; // ステア角 0~2π [mrad]
   } PROTOCOL_PACKED;
 
+  struct DetectedWall {
+    uint16_t distance; // 壁との距離 [mm]
+    int16_t angle; // 壁の角度 0のときまっすぐ　[mrad]
+  } PROTOCOL_PACKED;
+
   union {
     // パラメータのイベント
     // パラメータが設定されたときに送る
@@ -237,6 +251,9 @@ struct Feedback {
     CurrentState current_state;
 
     SteerUnitState steer_unit_state;
+
+    // 検出された壁の情報
+    DetectedWall detected_wall;
   };
 } PROTOCOL_PACKED;
 

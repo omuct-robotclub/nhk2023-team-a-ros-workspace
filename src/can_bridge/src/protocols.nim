@@ -77,6 +77,7 @@ type
     UNWIND_STEER,
     SET_LARGE_WHEEL_CMD,
     ACTIVATE,
+    WALL_ALIGN_ASSIST,
 
   GetParamObj* {.packed.} = object
     id*: RoboParamId
@@ -104,6 +105,9 @@ type
   
   SetLargeWheelCmdObj* {.packed.} = object
     cmd*: int16
+  
+  WallAlignAssistObj* {.packed.} = object
+    distance: uint16
 
   RoboCmd* {.packed.} = object
     case kind*: RoboCmdKind
@@ -119,6 +123,7 @@ type
     of SET_LARGE_WHEEL_CMD: setLargeWheelCmd*: SetLargeWheelCmdObj
     of UNWIND_STEER: discard
     of ACTIVATE: discard
+    of WALL_ALIGN_ASSIST: wallAlignAssist*: WallAlignAssistObj
 
   RoboCmdData* {.union.} = object
     bytes*: array[8, byte]
@@ -134,6 +139,7 @@ type
     STEER_UNWIND_DONE,
     CURRENT_STATE,
     STEER_UNIT_STATE,
+    DETECTED_WALL,
 
   ParamEventObj* {.packed.} = object
     id*: RoboParamId
@@ -159,6 +165,10 @@ type
   SteerUnitStateObj* {.packed.} = object
     index*: uint8
     velocity*, current*, angle*: int16
+  
+  DetectedWallObj* {.packed.} = object
+    distance: uint16
+    angle: int16
 
   RoboFeedback* {.packed.} = object
     case kind*: RoboFeedbackKind
@@ -170,6 +180,7 @@ type
     of STEER_UNWIND_DONE: discard
     of CURRENT_STATE: currentState*: CurrentStateObj
     of STEER_UNIT_STATE: steerUnitState*: SteerUnitStateObj
+    of DETECTED_WALL: detectedWall*: DetectedWallObj
 
   RoboFeedbackData* {.union.} = object
     bytes*: array[8, byte]
