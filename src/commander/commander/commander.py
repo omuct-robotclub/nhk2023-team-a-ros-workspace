@@ -15,8 +15,8 @@ from tf2_ros.transform_listener import TransformListener
 import tf2_py
 from math import sin, cos, radians, atan2, hypot, degrees
 from typing import cast, Optional, Union
-from utils import distance, get_yaw, quaternion_from_euler, new_pose
-from waypoints import Waypoint, WaypointNavigator, Side, Goal, Step
+from commander.utils import distance, get_yaw, quaternion_from_euler, new_pose
+from commander.waypoints import Waypoint, WaypointNavigator, Side, Goal, Step
 import sys
 import asyncio
 
