@@ -2,7 +2,7 @@
   ros__parameters:
     scan_topics: [scan0, scan1]
     sensor_reset: false
-    num_particles: 50
+    num_particles: 100
     range_threshold: 0.05
     laser_likelihood_max_dist: 0.1
     alpha_threshold: 0.975

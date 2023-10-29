@@ -390,6 +390,8 @@ proc canReadLoop(self) {.async.} =
       self.steerStates.velocities[idx] = fb.steerUnitState.velocity.float64 * 1e-2
       self.steerStates.currents[idx] = fb.steerUnitState.current.float64 * 1e-3
       self.steerStates.angles[idx] = fb.steerUnitState.angle.float64 * 1e-3
+    of DETECTED_WALL:
+      discard
 
 proc canWriteLoop(self) {.async.} =
   while true:

@@ -33,7 +33,7 @@ def generate_launch_description():
                 parameters=[
                     {
                         "serial_port_candidates": [
-                            "/dev/serial/by-path/pci-0000:00:14.0-usb-0:1.3.2:1.0-port0"
+                            "/dev/serial/by-path/pci-0000:00:14.0-usb-0:1.2:1.0-port0"
                         ],
                         "lidar_frame": "lidar0_link",
                     }
@@ -48,7 +48,7 @@ def generate_launch_description():
                 parameters=[
                     {
                         "serial_port_candidates": [
-                            "/dev/serial/by-path/pci-0000:00:14.0-usb-0:1.3.3:1.0-port0"
+                            "/dev/serial/by-path/pci-0000:00:14.0-usb-0:1.4:1.0-port0"
                         ],
                         "lidar_frame": "lidar1_link",
                     }
