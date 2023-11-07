@@ -54,7 +54,7 @@
   </joint>
 
   <joint name="lidar1_joint" type="fixed">
-    <origin xyz="-0.175 0.3868 0.0" rpy="${radians(180)} 0.0 ${radians(180)}" />
+    <origin xyz="-0.175 -0.220 0.0" rpy="0.0 0.0 ${radians(0)}" />
     <parent link="base_link" />
     <child link="lidar1_link" />
     <axis xyz="0.0 0.0 0.0" />

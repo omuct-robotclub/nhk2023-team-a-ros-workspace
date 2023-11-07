@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>wall_tracer</name>
+  <version>0.1.0</version>
+  <description>TODO: Package description</description>
+  <maintainer email="pylgos@todo.todo">pylgos</maintainer>
+  <license>TODO: License declaration</license>
+
+  <depend>rcl</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>builtin_interfaces</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+
+  <export>
+    <build_type>ament_nimble</build_type>
+  </export>
+</package>

@@ -58,6 +58,7 @@
             pkgs.xsimd
             pkgs.flann
             pkgs.gdb
+            pkgs.cairo
             pkgs.clang-tools
           ];
 

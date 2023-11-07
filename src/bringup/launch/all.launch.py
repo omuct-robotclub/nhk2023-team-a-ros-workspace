@@ -70,6 +70,19 @@ def generate_launch_description():
                     }
                 ],
             ),
+            Node(
+                package="laserscan_marger",
+                executable="laserscan_marger_node",
+                parameters=[
+                    {
+                        "publish_frequency": 10.0,
+                        "out_points": 1000,
+                        "scan_input_topics": ["scan0", "scan1"],
+                        "scan_timeout": 0.5
+                    }
+                ],
+                remappings=[("scan_out", "scan")]
+            ),
             # Node(
             #     package="commander",
             #     executable="commander",
