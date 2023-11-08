@@ -11,6 +11,7 @@ import results
 importInterface std_msgs/msg/color_rgba
 importInterface sensor_msgs/msg/laser_scan
 importInterface visualization_msgs/msg/[marker, marker_array]
+importInterface nav_msgs/msg/odometry
 importInterface geometry_msgs/msg/[point, twist]
 importInterface builtin_interfaces/msg/time as time_msg, Time as TimeMsg
 
@@ -20,6 +21,7 @@ type
     robot_size_x: float
     robot_size_y: float
     lookahead_distance: float
+    extra_lookahead_distance_per_velocity: float
     in_course_distance: float
     out_course_distance: float
     line_fitting: SeqRansacConfig
@@ -32,6 +34,9 @@ type
     scanSub: Subscription[LaserScan]
     cmdSub: Subscription[Twist]
     cmdPub: Publisher[Twist]
+    odomSub: Subscription[Odometry]
+
+    latestOdom: Odometry
 
     targetCurvature: float
     targetCourse: Course
@@ -50,7 +55,8 @@ proc newWallTracer(): WallTracer =
   result.params = result.node.createObjParamServer(Parameters(
     robot_size_x: 0.7,
     robot_size_y: 0.7,
-    lookahead_distance: 1.5,
+    lookahead_distance: 0.75,
+    extra_lookahead_distance_per_velocity: 0.5,
     in_course_distance: 2.25,
     out_course_distance: 0.75,
     line_fitting: SeqRansacConfig(
@@ -65,6 +71,7 @@ proc newWallTracer(): WallTracer =
   result.cmdSub = result.node.createSubscription(Twist, "manual_cmd_vel", SystemDefaultQoS)
   result.cmdPub = result.node.createPublisher(Twist, "cmd_vel", SystemDefaultQoS)
   result.markerPub = result.node.createPublisher(MarkerArray, "wall_tracer_markers", SystemDefaultQoS)
+  result.odomSub = result.node.createSubscription(Odometry, "odom", SensorDataQoS)
   result.targetCurvature = NaN
   result.targetCourse = OutCourse
 
@@ -207,17 +214,20 @@ proc moveParallel(line: Line, delta: float32): Line =
 
 proc getCarrotPoint(self; lines: openArray[Line]): Option[Vector2f] =
   var candidates = newSeq[Vector2f]()
-  for l in lines:
-    let res = l.intersectionToCircle(vector2f(0, 0), self.params.value.lookahead_distance)
-    if res.isNone: continue
-    let points = res.get().filterIt(it.x > 0)
-    if points.len == 0: continue
-    candidates.add points
-  
-  if candidates.len > 0:
-    some candidates.sortedByIt(arctan2(it.y, it.x))[^1]
-  else:
-    none Vector2f
+  let presentSpeed = self.latestOdom.twist.twist.linear.to(Vector3d).length()
+  var lookaheadDist = self.params.value.lookahead_distance + self.params.value.extra_lookahead_distance_per_velocity * presentSpeed
+  for i in 0..<100:
+    lookaheadDist += 0.1
+    for l in lines:
+      let res = l.intersectionToCircle(vector2f(0, 0), lookaheadDist)
+      if res.isNone: continue
+      let points = res.get().filterIt(it.x > 0)
+      if points.len == 0: continue
+      candidates.add points
+    
+    if candidates.len > 0:
+      return some candidates.sortedByIt(arctan2(it.y, it.x))[^1]
+  none Vector2f
 
 proc scanSubLoop(self) {.async.} =
   while true:
@@ -253,10 +263,10 @@ proc scanSubLoop(self) {.async.} =
 proc cmdSubLoop(self) {.async.} =
   while true:
     let msg = await self.cmdSub.recv()
-    self.turnEnabled = abs(msg.angular.z) > 0.5
-    if msg.angular.z > 0.5:
+    self.turnEnabled = abs(msg.angular.x) > 0.5
+    if msg.angular.x > 0.5:
       self.targetCourse = InCourse
-    elif msg.angular.z < -0.5:
+    elif msg.angular.x < -0.5:
       self.targetCourse = OutCourse
 
     let enabled = msg.linear.z > 0.5
@@ -264,13 +274,18 @@ proc cmdSubLoop(self) {.async.} =
     if enabled:
       if not self.targetCurvature.isNaN:
         let linear = msg.linear.to(Vector3d)
-        let speed = vector2f(linear.x, linear.y).length()
         var cmd = Twist()
-        cmd.linear.x = speed
-        cmd.angular.z = speed * self.targetCurvature
+        cmd.linear.x = linear.x
+        cmd.angular.z = 
+          if abs(linear.x * self.targetCurvature) > abs(msg.angular.z):
+            linear.x * self.targetCurvature
+          else:
+            msg.angular.z
         self.cmdPub.publish cmd
       else:
-        self.cmdPub.publish Twist()
+        var cmd = Twist()
+        cmd.angular.z = msg.angular.z
+        self.cmdPub.publish cmd
     else:
       var cmd = Twist()
       cmd.linear.x = msg.linear.x
@@ -278,8 +293,14 @@ proc cmdSubLoop(self) {.async.} =
       cmd.angular.z = msg.angular.z
       self.cmdPub.publish msg
 
+proc odomSubLoop(self) {.async.} =
+  while true:
+    let msg = await self.odomSub.recv()
+    self.latestOdom = msg
+
 proc run(self) {.async.} =
   let futures = [
+    self.odomSubLoop(),
     self.scanSubLoop(),
     self.cmdSubLoop(),
   ]
