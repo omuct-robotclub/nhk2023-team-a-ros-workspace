@@ -24,7 +24,7 @@
       antiwindup: true
       kd: 0.0
       ki: 0.0
-      kp: 6.36402569592505
+      kp: 4.81798715202968
       max: 40.0
       min: -40.0
       use_velocity_for_d_term: false
@@ -32,17 +32,17 @@
       antiwindup: true
       kd: 0.0
       ki: 0.0
-      kp: 6.85590727940512
-      max: 0.467665952896184
-      min: -0.68822269806921
+      kp: 7.33618843682506
+      max: 0.698501070670185
+      min: -0.7841541755819
       use_velocity_for_d_term: true
     linear_accel_limit: 1000.0
     lock_arm_angle: false
     steer:
       antiwindup: true
-      kd: 0.0432069134086172
-      ki: 0.0
-      kp: 0.763322114892799
+      kd: 0.0369659145454797
+      ki: 1.05616898703242
+      kp: 0.566490638497485
       max: 0.8
       min: -0.8
       use_velocity_for_d_term: false
