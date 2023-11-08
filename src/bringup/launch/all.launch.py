@@ -9,6 +9,7 @@ from pathlib import Path
 
 def generate_launch_description():
     simulation = LaunchConfiguration("simulation")
+    enable_wall_tracing = LaunchConfiguration("enable_wall_tracing")
 
     bringup_dir = Path(get_package_share_directory("bringup"))
     config_dir = bringup_dir / "config"
@@ -16,15 +17,14 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("simulation", default_value="False"),
+            DeclareLaunchArgument("enable_wall_tracing", default_value="True"),
+
             # Hardware
             Node(
                 package="can_bridge",
                 executable="can_bridge",
                 parameters=[config_dir / "can_bridge.yaml"],
-                condition=IfCondition(PythonExpression(["not ", simulation])),
-                remappings=[(
-                    ("cmd_vel_stamped", "manual_cmd_vel")
-                )]
+                condition=IfCondition(PythonExpression(["not ", simulation]))
             ),
             Node(
                 package="ldlidar",
@@ -78,15 +78,25 @@ def generate_launch_description():
                         "publish_frequency": 10.0,
                         "out_points": 1000,
                         "scan_input_topics": ["scan0", "scan1"],
-                        "scan_timeout": 0.5
+                        "scan_timeout": 0.5,
+                        "out_range_min": 0.5,
                     }
                 ],
                 remappings=[("scan_out", "scan")]
             ),
-            # Node(
-            #     package="commander",
-            #     executable="commander",
-            # ),
+            Node(
+                package="wall_tracer",
+                executable="wall_tracer",
+                parameters=[{
+                    "line_fitting": {
+                        "iterationCount": 4000,
+                        "inlierDistanceThreshold": 0.1,
+                        "minInlierRatio": 0.2,
+                        "minPointsRatio": 0.2,
+                    }
+                }],
+                condition=IfCondition(enable_wall_tracing)
+            ),
             # Connection
             Node(package="udp_multicast_beacon", executable="beacon"),
             Node(package="rosbridge_server", executable="rosbridge_websocket"),
