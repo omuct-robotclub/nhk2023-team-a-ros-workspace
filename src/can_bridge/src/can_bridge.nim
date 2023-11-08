@@ -357,7 +357,7 @@ proc canReadLoop(self) {.async.} =
       self.prevOdomLinearVel.y = float(fb.velocity.vy) * 1e-3
       self.prevOdomAngVel = float(fb.velocity.angVel) * 1e-3
     of POSE:
-      self.logger.info fb.pose, " ", self.prevPose
+      # self.logger.info fb.pose, " ", self.prevPose
       var msg = OdometryMsg()
       msg.header.frameId = "odom"
       msg.header.stamp = self.node.clock.now().toMsg()
