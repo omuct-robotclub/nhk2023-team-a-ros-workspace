@@ -6,8 +6,6 @@ type
     point*: Vector2f
     direction*: Vector2f
 
-{.push inline.}
-
 proc fromPointAndDir*(_: typedesc[Line], p, d: Vector2f): Line =
   Line(point: p, direction: d.normalized())
 
@@ -48,14 +46,12 @@ proc intersectionToCircle*(l: Line, center: Vector2f, radius: float32): Option[a
   else:
     none array[2, Vector2f]
 
-{.pop.}
-
 type
   SeqRansacConfig* = object
     inlierDistanceThreshold*: float
     iterationCount*: int
-    minInlierRatio*: float
-    minPointsRatio*: float
+    minLineLength*: float
+    stopTotalLineLength*: float
     minDistanceBetweenSamples*: float
 
   SeqRansac* = object
@@ -64,10 +60,8 @@ type
     originalPointCount: int
     points: seq[Vector2f]
 
-{.push inline.}
-
-proc init*(_: typedesc[SeqRansac], points: sink seq[Vector2f], config = SeqRansacConfig()): SeqRansac =
-  SeqRansac(config: config, originalPointCount: points.len, points: points, rng: initRand())
+proc init*(_: typedesc[SeqRansac], points: sink seq[Vector2f], pointCount: int, config = SeqRansacConfig()): SeqRansac =
+  SeqRansac(config: config, originalPointCount: pointCount, points: points, rng: initRand())
 
 proc pickTwoPoints(self: var SeqRansac): (Vector2f, Vector2f) {.inline.} =
   var
@@ -78,45 +72,54 @@ proc pickTwoPoints(self: var SeqRansac): (Vector2f, Vector2f) {.inline.} =
     i1 = self.rng.rand(0..self.points.high)
   (self.points[i0], self.points[i1])
 
+proc getTotalLineLength(self: SeqRansac, points: seq[Vector2f]): float =
+  for p in points:
+    result += p.length
+  result *= 2 * PI / self.originalPointCount.float
+
 proc doRansac(self: var SeqRansac): Option[Line] =
-  if self.points.len / self.originalPointCount < self.config.minPointsRatio or self.points.len < 2:
+  if self.getTotalLineLength(self.points) < self.config.stopTotalLineLength or self.points.len < 2:
     return none Line
 
-  var bestLine: Line
-  var bestInliers: seq[Vector2f]
+  var bestLine: Option[Line]
   var bestOutliers: seq[Vector2f]
-  var bestLoss = Inf
-  
+  var bestScore = 0.0
+
+  var outliers = newSeq[Vector2f](self.points.len)
+
   for i in 0..<self.config.iterationCount:
+    var outliersLen = 0
+
     let (p1, p2) = self.pickTwoPoints()
     if (p2 - p1).length < self.config.minDistanceBetweenSamples:
       continue
     let line = Line.from2Points(p1, p2)
-    var inliers: seq[Vector2f]
-    var outliers: seq[Vector2f]
-    var loss = 0.0
-    
+    var score = 0.0
+    var lineLength = 0.0
+
     for p in self.points:
       let dist = line.distanceToPoint(p)
       let isInlier = dist < self.config.inlierDistanceThreshold
       if isInlier:
-        loss += dist^2 / self.originalPointCount.float
-        inliers.add p
+        lineLength += p.length
+        score += max(1 - dist, 0) * p.length
       else:
-        outliers.add p
+        outliers[outliersLen] = p
+        inc outliersLen
     
-    if loss < bestLoss and
-        inliers.len / self.originalPointCount > self.config.minInlierRatio:
-      bestInliers = inliers
-      bestOutliers = outliers
-      bestLoss = loss
-      bestLine = line
+    lineLength *= 2 * PI / self.originalPointCount.float
+    
+    if score > bestScore and
+        lineLength > self.config.minLineLength:
+      bestOutliers = outliers[0..<outliersLen]
+      bestScore = score
+      bestLine = some line
 
-  if bestInliers.len == 0:
-    none Line
-  else:
+  if bestLine.isSome:
     self.points = bestOutliers
-    some bestLine
+    bestLine
+  else:
+    none Line
 
 proc doSeqRansac*(self: var SeqRansac): seq[Line] =
   while true:
@@ -125,8 +128,6 @@ proc doSeqRansac*(self: var SeqRansac): seq[Line] =
       result.add res.get()
     else:
       return
-
-{.pop.}
 
 when isMainModule:
   block:

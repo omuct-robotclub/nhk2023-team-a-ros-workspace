@@ -5,7 +5,7 @@ import tf2/msgconverters
 import chronos
 import geonimetry
 import ./linefitting
-import std/[options, sequtils, math, times, algorithm]
+import std/[options, sequtils, math, times, algorithm, deques]
 import results
 
 importInterface std_msgs/msg/color_rgba
@@ -25,6 +25,7 @@ type
     in_course_distance: float
     out_course_distance: float
     line_fitting: SeqRansacConfig
+    odom_lifespan: float
 
   WallTracer = ref object
     node: Node
@@ -37,6 +38,9 @@ type
     odomSub: Subscription[Odometry]
 
     latestOdom: Odometry
+    lastScanTime: RosTime
+    detectedLines: seq[Line]
+    odomBuffer: Deque[Odom]
 
     targetCurvature: float
     targetCourse: Course
@@ -45,6 +49,10 @@ type
   Course = enum
     InCourse
     OutCourse
+  
+  Odom = object
+    stamp: RosTime
+    dx, dy, da: float
 
 using self: WallTracer
 
@@ -59,11 +67,12 @@ proc newWallTracer(): WallTracer =
     extra_lookahead_distance_per_velocity: 0.5,
     in_course_distance: 2.25,
     out_course_distance: 0.75,
+    odom_lifespan: 1.0,
     line_fitting: SeqRansacConfig(
       inlierDistanceThreshold: 0.05,
-      minInlierRatio: 0.2,
-      iterationCount: 2000,
-      minPointsRatio: 0.2,
+      minLineLength: 1.0,
+      stopTotalLineLength: 1.0,
+      iterationCount: 1000,
       minDistanceBetweenSamples: 1.0,
     )
   ))
@@ -237,32 +246,15 @@ proc scanSubLoop(self) {.async.} =
       self.node.getLogger.warn "failed to transform laser scan"
       continue
     let points = pointsRes.tryValue()
-    var ransac = SeqRansac.init(points, self.params.value.line_fitting)
-    
-    let
-      lines = ransac.doSeqRansac()
-      linesFiltered = lines.filterIt(self.filterLine(it))
-      offsetDistance =
-        case self.targetCourse
-        of InCourse: self.params.value.in_course_distance
-        of OutCourse: self.params.value.out_course_distance
-      linesMoved = linesFiltered.mapIt(it.moveParallel(offsetDistance))
-      linesIgnored = lines.filterIt(not self.filterLine(it))
-      carrotPoint = self.getCarrotPoint(linesMoved)
-
-    if carrotPoint.isSome:
-      let carrotPoint = carrotPoint.get()
-      let turnAngle = arctan2(carrotPoint.y, carrotPoint.x)
-      let curvature = 2 * sin(turnAngle) / carrotPoint.length()
-      self.targetCurvature = curvature
-      self.publishMarkers(linesFiltered, linesIgnored, linesMoved, some carrotPoint, some curvature.float64, msg.header.stamp)
-    else:
-      self.targetCurvature = NaN
-      self.publishMarkers(linesFiltered, linesIgnored, linesMoved, none Vector2f, none float, msg.header.stamp)
+    var ransac = SeqRansac.init(points, msg.ranges.len, self.params.value.line_fitting)
+    let lines = ransac.doSeqRansac()
+    self.detectedLines = lines
+    self.lastScanTime = initRosTime(msg.header.stamp.sec.int64 * 1_000_000_000 + msg.header.stamp.nanosec.int64)
 
 proc cmdSubLoop(self) {.async.} =
   while true:
     let msg = await self.cmdSub.recv()
+
     self.turnEnabled = abs(msg.angular.x) > 0.5
     if msg.angular.x > 0.5:
       self.targetCourse = InCourse
@@ -293,10 +285,62 @@ proc cmdSubLoop(self) {.async.} =
       cmd.angular.z = msg.angular.z
       self.cmdPub.publish msg
 
+proc removeOutdatedOdom(self) =
+  let expirationTime = self.node.clock.now() - initDuration(nanoseconds=int64(self.params.value.odom_lifespan * 1e9))
+  while self.odomBuffer.len > 0 and self.odomBuffer.peekFirst().stamp < expirationTime:
+    discard self.odomBuffer.popFirst()
+
+proc applyOdometry(self; lines: seq[Line], time: RosTime): seq[Line] =
+  var
+    dx = 0.0
+    dy = 0.0
+    da = 0.0
+  for odom in self.odomBuffer:
+    if odom.stamp < time: continue
+    dx += odom.dx * cos(da) - odom.dy * sin(da)
+    dy += odom.dx * sin(da) + odom.dy * cos(da)
+    da += odom.da
+  for line in lines:
+    let rot = rotationZ(float32 -da)
+    let dir = rot * vector3f(line.direction.x, line.direction.y, 0.0)
+    let p = rot * (vector3f(line.point.x, line.point.y, 0.0) - vector3f(dx, dy, 0.0))
+    result.add Line.fromPointAndDir(vector2f(p.x, p.y), vector2f(dir.x, dir.y))
+
 proc odomSubLoop(self) {.async.} =
   while true:
     let msg = await self.odomSub.recv()
+    let msgStamp = initRosTime(msg.header.stamp.sec.int64 * 1_000_000_000 + msg.header.stamp.nanosec.int64)
+    let dt = msgStamp - initRosTime(self.latestOdom.header.stamp.sec.int64 * 1_000_000_000 + self.latestOdom.header.stamp.nanosec.int64)
+    let dtSec = dt.inNanoseconds.float * 1e-9
+    let linear = msg.twist.twist.linear.to(Vector3d)
+    let angular = msg.twist.twist.angular.z
+    let odom = Odom(dx: linear.x * dtSec, dy: linear.y * dtSec, da: angular * dtSec, stamp: msgStamp)
+    self.odomBuffer.addLast odom
+    self.removeOutdatedOdom()
     self.latestOdom = msg
+
+    let lines = self.applyOdometry(self.detectedLines, self.lastScanTime)
+
+    let
+      linesFiltered = lines.filterIt(self.filterLine(it))
+      offsetDistance =
+        case self.targetCourse
+        of InCourse: self.params.value.in_course_distance
+        of OutCourse: self.params.value.out_course_distance
+      linesMoved = linesFiltered.mapIt(it.moveParallel(offsetDistance))
+      linesIgnored = lines.filterIt(not self.filterLine(it))
+      carrotPoint = self.getCarrotPoint(linesMoved)
+
+    if carrotPoint.isSome:
+      let carrotPoint = carrotPoint.get()
+      let turnAngle = arctan2(carrotPoint.y, carrotPoint.x)
+      let curvature = 2 * sin(turnAngle) / carrotPoint.length()
+      self.targetCurvature = curvature
+      self.publishMarkers(linesFiltered, linesIgnored, linesMoved, some carrotPoint, some curvature.float64, msg.header.stamp)
+    else:
+      self.targetCurvature = NaN
+      self.publishMarkers(linesFiltered, linesIgnored, linesMoved, none Vector2f, none float, msg.header.stamp)
+
 
 proc run(self) {.async.} =
   let futures = [
