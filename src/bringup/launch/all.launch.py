@@ -89,10 +89,7 @@ def generate_launch_description():
                 executable="wall_tracer",
                 parameters=[{
                     "line_fitting": {
-                        "iterationCount": 4000,
-                        "inlierDistanceThreshold": 0.1,
-                        "minInlierRatio": 0.2,
-                        "minPointsRatio": 0.2,
+                        "iterationCount": 1000,
                     }
                 }],
                 condition=IfCondition(enable_wall_tracing)
