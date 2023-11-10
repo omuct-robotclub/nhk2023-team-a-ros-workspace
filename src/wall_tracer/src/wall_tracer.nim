@@ -4,7 +4,7 @@ import tf2
 import tf2/msgconverters
 import chronos
 import geonimetry
-import ./linefitting
+import ./[linefitting, pid_controller]
 import std/[options, sequtils, math, times, algorithm, deques]
 import results
 
@@ -26,6 +26,7 @@ type
     out_course_distance: float
     line_fitting: SeqRansacConfig
     odom_lifespan: float
+    angular_pid_gain: PidGain
 
   WallTracer = ref object
     node: Node
@@ -42,9 +43,12 @@ type
     detectedLines: seq[Line]
     odomBuffer: Deque[Odom]
 
-    targetCurvature: float
+    targetLine: Option[Line]
+    carrotPoint: Option[Vector2f]
     targetCourse: Course
     turnEnabled: bool
+
+    angleController: PidController
 
   Course = enum
     InCourse
@@ -63,8 +67,8 @@ proc newWallTracer(): WallTracer =
   result.params = result.node.createObjParamServer(Parameters(
     robot_size_x: 0.7,
     robot_size_y: 0.7,
-    lookahead_distance: 0.75,
-    extra_lookahead_distance_per_velocity: 0.5,
+    lookahead_distance: 0.5,
+    extra_lookahead_distance_per_velocity: 0.0,
     in_course_distance: 2.25,
     out_course_distance: 0.75,
     odom_lifespan: 1.0,
@@ -74,15 +78,24 @@ proc newWallTracer(): WallTracer =
       stopTotalLineLength: 1.0,
       iterationCount: 1000,
       minDistanceBetweenSamples: 1.0,
-    )
+    ),
+    angular_pid_gain: PidGain(
+      kp: 5.0,
+      ki: 0.0,
+      kd: 0.0,
+      max: 5.0,
+      min: -5.0,
+      useVelocityForDTerm: true,
+      antiWindup: true,
+    ),
   ))
   result.scanSub = result.node.createSubscription(LaserScan, "scan", SensorDataQoS)
   result.cmdSub = result.node.createSubscription(Twist, "manual_cmd_vel", SystemDefaultQoS)
   result.cmdPub = result.node.createPublisher(Twist, "cmd_vel", SystemDefaultQoS)
   result.markerPub = result.node.createPublisher(MarkerArray, "wall_tracer_markers", SystemDefaultQoS)
   result.odomSub = result.node.createSubscription(Odometry, "odom", SensorDataQoS)
-  result.targetCurvature = NaN
   result.targetCourse = OutCourse
+  result.angleController = initPidController(result.params.value.angular_pid_gain)
 
 proc to2Point(line: Line): array[2, Point] =
   let c = vector2d(line.point.x, line.point.y)
@@ -112,7 +125,7 @@ proc transformScanToPoints(self; scan: LaserScan): Result[seq[Vector2f], Transfo
       res.add vector2f(point.x, point.y)
   ok(res)
 
-proc publishMarkers(self; filtered, ignored, moved: seq[Line], carrotPoint: Option[Vector2f], curvature: Option[float], stamp: TimeMsg) =
+proc publishMarkers(self; filtered, ignored, moved: seq[Line], carrotPoint: Option[Vector2f], stamp: TimeMsg) =
   var delAllMarker = Marker()
   var markers = MarkerArray()
   delAllMarker.id = 0
@@ -160,32 +173,6 @@ proc publishMarkers(self; filtered, ignored, moved: seq[Line], carrotPoint: Opti
     m.lifetime.nanosec = 200_000_000
     m.points.add Point(x: p.x, y: p.y, z: 0.0)
     markers.markers.add m
-  
-  if curvature.isSome:
-    let curvature = curvature.get()
-    var m = Marker()
-    m.header.frameId = "base_link"
-    m.header.stamp = stamp
-    m.id = int32 markers.markers.len
-    m.`type` = Marker.LINE_STRIP
-    m.action = Marker.ADD
-    m.scale.x = 0.05
-    m.scale.y = 0.05
-    m.scale.z = 0.05
-    m.color = carrotPointColor
-    m.lifetime.nanosec = 200_000_000
-    var
-      x = 0'f
-      y = 0'f
-      a = 0'f
-    let dt = 0.01
-    let vx = 1.0
-    for i in 0..<100:
-      x += vx * cos(a) * dt
-      y += vx * sin(a) * dt
-      a += vx * curvature * dt
-      m.points.add Point(x: x, y: y, z: 0.0)
-    markers.markers.add m
 
   self.markerPub.publish(markers)
 
@@ -221,8 +208,8 @@ proc moveParallel(line: Line, delta: float32): Line =
   else:
     Line.fromPointAndDir(p2, line.direction)
 
-proc getCarrotPoint(self; lines: openArray[Line]): Option[Vector2f] =
-  var candidates = newSeq[Vector2f]()
+proc getCarrotPoint(self; lines: openArray[Line]): Option[(Vector2f, Line)] =
+  var candidates = newSeq[(Vector2f, Line)]()
   let presentSpeed = self.latestOdom.twist.twist.linear.to(Vector3d).length()
   var lookaheadDist = self.params.value.lookahead_distance + self.params.value.extra_lookahead_distance_per_velocity * presentSpeed
   for i in 0..<100:
@@ -232,11 +219,12 @@ proc getCarrotPoint(self; lines: openArray[Line]): Option[Vector2f] =
       if res.isNone: continue
       let points = res.get().filterIt(it.x > 0)
       if points.len == 0: continue
-      candidates.add points
-    
+      for p in points:
+        candidates.add (p, l)
+
     if candidates.len > 0:
-      return some candidates.sortedByIt(arctan2(it.y, it.x))[^1]
-  none Vector2f
+      return some candidates.sortedByIt(arctan2(it[0].y, it[0].x))[^1]
+  none (Vector2f, Line)
 
 proc scanSubLoop(self) {.async.} =
   while true:
@@ -261,18 +249,30 @@ proc cmdSubLoop(self) {.async.} =
     elif msg.angular.x < -0.5:
       self.targetCourse = OutCourse
 
+    self.angleController.gain = self.params.value.angular_pid_gain
+
     let enabled = msg.linear.z > 0.5
 
     if enabled:
-      if not self.targetCurvature.isNaN:
-        let linear = msg.linear.to(Vector3d)
-        var cmd = Twist()
-        cmd.linear.x = linear.x
-        cmd.angular.z = 
-          if abs(linear.x * self.targetCurvature) > abs(msg.angular.z):
-            linear.x * self.targetCurvature
+      if self.carrotPoint.isSome:
+        let speed = vector2f(msg.linear.x, msg.linear.y).length()
+        let p = self.carrotPoint.get()
+        let line = self.targetLine.get()
+        let dir1 = line.direction
+        let dir2 = -line.direction
+        let dir = 
+          if (p - dir1).length2 < (p - dir2).length2:
+            dir1
           else:
-            msg.angular.z
+            dir2
+        let pDir = p.normalized()
+        let tgtAngle = arctan2(dir.y, dir.x)
+        var cmd = Twist()
+        self.angleController.target = tgtAngle
+        self.angleController.updateWithVel(0.0, self.latestOdom.twist.twist.angular.z, 0.1)
+        cmd.linear.x = pDir.x * speed
+        cmd.linear.y = pDir.y * speed
+        cmd.angular.z = self.angleController.output()
         self.cmdPub.publish cmd
       else:
         var cmd = Twist()
@@ -329,17 +329,16 @@ proc odomSubLoop(self) {.async.} =
         of OutCourse: self.params.value.out_course_distance
       linesMoved = linesFiltered.mapIt(it.moveParallel(offsetDistance))
       linesIgnored = lines.filterIt(not self.filterLine(it))
-      carrotPoint = self.getCarrotPoint(linesMoved)
+      carrotPointAndLine = self.getCarrotPoint(linesMoved)
 
-    if carrotPoint.isSome:
-      let carrotPoint = carrotPoint.get()
-      let turnAngle = arctan2(carrotPoint.y, carrotPoint.x)
-      let curvature = 2 * sin(turnAngle) / carrotPoint.length()
-      self.targetCurvature = curvature
-      self.publishMarkers(linesFiltered, linesIgnored, linesMoved, some carrotPoint, some curvature.float64, msg.header.stamp)
+    if carrotPointAndLine.isSome:
+      self.carrotPoint = some carrotPointAndLine.get()[0]
+      self.targetLine = some carrotPointAndLine.get()[1]
+      self.publishMarkers(linesFiltered, linesIgnored, linesMoved, self.carrotPoint, msg.header.stamp)
     else:
-      self.targetCurvature = NaN
-      self.publishMarkers(linesFiltered, linesIgnored, linesMoved, none Vector2f, none float, msg.header.stamp)
+      self.carrotPoint = none Vector2f
+      self.targetLine = none Line
+      self.publishMarkers(linesFiltered, linesIgnored, linesMoved, none Vector2f, msg.header.stamp)
 
 
 proc run(self) {.async.} =
