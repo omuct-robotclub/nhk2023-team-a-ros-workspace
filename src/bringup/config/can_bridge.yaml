@@ -1,21 +1,21 @@
 /can_bridge:
   ros__parameters:
-    angular_accel_limit: 1000.0
+    angular_accel_limit: 10.0
     arm_angle:
       antiwindup: true
-      kd: 0.0739318299931772
+      kd: 0.0392434988147994
       ki: 0.0
-      kp: 1.41622665370917
-      max: 0.302593620687272
-      min: -0.30144099552381
+      kp: 0.695035460990283
+      max: 0.152245850511699
+      min: -0.14515365059814
       use_velocity_for_d_term: false
     arm_length:
       antiwindup: true
-      kd: 0.482477196348667
+      kd: 0.264775413713356
       ki: 0.0
-      kp: 17.6188190110431
-      max: 0.813767500188556
-      min: -0.80748917028868
+      kp: 10.3282521475635
+      max: 0.415602820843005
+      min: -0.42784018384269
       use_velocity_for_d_term: false
     can_id: 200
     can_interface: can0
@@ -24,7 +24,7 @@
       antiwindup: true
       kd: 0.0
       ki: 0.0
-      kp: 4.81798715202968
+      kp: 3.57919621749413
       max: 40.0
       min: -40.0
       use_velocity_for_d_term: false
@@ -33,18 +33,18 @@
       kd: 0.0
       ki: 0.0
       kp: 7.33618843682506
-      max: 0.698501070670185
-      min: -0.7841541755819
+      max: 0.455791944247555
+      min: -0.60827422621615
       use_velocity_for_d_term: true
-    linear_accel_limit: 1000.0
+    linear_accel_limit: 5.0
     lock_arm_angle: false
     steer:
       antiwindup: true
-      kd: 0.0369659145454797
-      ki: 1.05616898703242
-      kp: 0.566490638497485
-      max: 0.8
-      min: -0.8
+      kd: 0.0208037834224033
+      ki: 0.0
+      kp: 0.364066193848588
+      max: 0.391962187196325
+      min: -0.39078014372265
       use_velocity_for_d_term: false
     steer0:
       offset: 0.0
