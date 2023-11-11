@@ -418,29 +418,27 @@ proc canWriteLoop(self) {.async.} =
 proc updateVelocity(self; dt: Duration) =
   let dtSec = dt.nanoseconds.float * 1e-9
 
-  self.presentLinearVel = self.targetLinearVel
-  self.presentAngVel = self.targetAngVel
-  # block:
-  #   let
-  #     tgt = self.targetLinearVel
-  #     cur = self.presentLinearVel
-  #     lim = self.params.value.linear_accel_limit * dtSec
-  #   if tgt.dist(cur) > lim:
-  #     let dir = normalize(tgt - cur)
-  #     self.presentLinearVel += dir * lim
-  #   else:
-  #     self.presentLinearVel = tgt
+  block:
+    let
+      tgt = self.targetLinearVel
+      cur = self.presentLinearVel
+      lim = self.params.value.linear_accel_limit * dtSec
+    if tgt.dist(cur) > lim:
+      let dir = normalize(tgt - cur)
+      self.presentLinearVel += dir * lim
+    else:
+      self.presentLinearVel = tgt
 
-  # block:
-  #   let
-  #     tgt = self.targetAngVel
-  #     cur = self.presentAngVel
-  #     lim = self.params.value.angular_accel_limit * dtSec
-  #   if abs(tgt - cur) > lim:
-  #     let dir = sign(tgt - cur)
-  #     self.presentAngVel += dir * lim
-  #   else:
-  #     self.presentAngVel = tgt
+  block:
+    let
+      tgt = self.targetAngVel
+      cur = self.presentAngVel
+      lim = self.params.value.angular_accel_limit * dtSec
+    if abs(tgt - cur) > lim:
+      let dir = sign(tgt - cur)
+      self.presentAngVel += dir * lim
+    else:
+      self.presentAngVel = tgt
   
   self.cmdVelFilteredPub.publish(Twist(
       linear: Vector3(x: self.presentLinearVel.x, y: self.presentLinearVel.y),
