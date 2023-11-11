@@ -87,11 +87,7 @@ def generate_launch_description():
             Node(
                 package="wall_tracer",
                 executable="wall_tracer",
-                parameters=[{
-                    "line_fitting": {
-                        "iterationCount": 1000,
-                    }
-                }],
+                parameters=[config_dir / "wall_tracer.yaml"],
                 condition=IfCondition(enable_wall_tracing)
             ),
             # Connection
