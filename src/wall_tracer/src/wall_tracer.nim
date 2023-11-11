@@ -17,11 +17,10 @@ importInterface builtin_interfaces/msg/time as time_msg, Time as TimeMsg
 
 type
   Parameters = object
-    enable_wall_tracing: bool
     robot_size_x: float
     robot_size_y: float
-    lookahead_distance: float
-    extra_lookahead_distance_per_velocity: float
+    lookahead_distance_incourse: float
+    lookahead_distance_outcourse: float
     in_course_distance: float
     out_course_distance: float
     line_fitting: SeqRansacConfig
@@ -67,8 +66,8 @@ proc newWallTracer(): WallTracer =
   result.params = result.node.createObjParamServer(Parameters(
     robot_size_x: 0.7,
     robot_size_y: 0.7,
-    lookahead_distance: 0.5,
-    extra_lookahead_distance_per_velocity: 0.0,
+    lookahead_distance_incourse: 0.5,
+    lookahead_distance_outcourse: 0.5,
     in_course_distance: 2.25,
     out_course_distance: 0.75,
     odom_lifespan: 1.0,
@@ -210,8 +209,10 @@ proc moveParallel(line: Line, delta: float32): Line =
 
 proc getCarrotPoint(self; lines: openArray[Line]): Option[(Vector2f, Line)] =
   var candidates = newSeq[(Vector2f, Line)]()
-  let presentSpeed = self.latestOdom.twist.twist.linear.to(Vector3d).length()
-  var lookaheadDist = self.params.value.lookahead_distance + self.params.value.extra_lookahead_distance_per_velocity * presentSpeed
+  var lookaheadDist =
+    case self.targetCourse
+    of InCourse: self.params.value.lookahead_distance_incourse
+    of OutCourse: self.params.value.lookahead_distance_outcourse
   for i in 0..<100:
     lookaheadDist += 0.1
     for l in lines:
