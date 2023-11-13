@@ -37,7 +37,7 @@ proc updateWithVel*(self: var PidController, present: float, velocity: float, dt
   let i = self.integral * self.gain.ki
   let d =
     if self.gain.useVelocityForDTerm:
-      velocity * self.gain.kd
+      -velocity * self.gain.kd
     else:
       (error - self.prevError) / dt * self.gain.kd
   self.prevError = error

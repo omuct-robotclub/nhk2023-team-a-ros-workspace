@@ -17,6 +17,7 @@ importInterface builtin_interfaces/msg/time as time_msg, Time as TimeMsg
 
 type
   Parameters = object
+    enable_turn: bool
     robot_size_x: float
     robot_size_y: float
     lookahead_distance_incourse: float
@@ -64,6 +65,7 @@ proc newWallTracer(): WallTracer =
   result.node = newNode("wall_tracer")
   result.buf = TfBuffer.new(result.node)
   result.params = result.node.createObjParamServer(Parameters(
+    enable_turn: false,
     robot_size_x: 0.7,
     robot_size_y: 0.7,
     lookahead_distance_incourse: 0.5,
@@ -93,7 +95,7 @@ proc newWallTracer(): WallTracer =
   result.cmdPub = result.node.createPublisher(Twist, "cmd_vel", SystemDefaultQoS)
   result.markerPub = result.node.createPublisher(MarkerArray, "wall_tracer_markers", SystemDefaultQoS)
   result.odomSub = result.node.createSubscription(Odometry, "odom", SensorDataQoS)
-  result.targetCourse = OutCourse
+  result.targetCourse = InCourse
   result.angleController = initPidController(result.params.value.angular_pid_gain)
 
 proc to2Point(line: Line): array[2, Point] =
@@ -244,7 +246,7 @@ proc cmdSubLoop(self) {.async.} =
   while true:
     let msg = await self.cmdSub.recv()
 
-    self.turnEnabled = abs(msg.angular.x) > 0.5
+    self.turnEnabled = abs(msg.angular.x) > 0.5 and self.params.value.enable_turn
     if msg.angular.x > 0.5:
       self.targetCourse = InCourse
     elif msg.angular.x < -0.5:
