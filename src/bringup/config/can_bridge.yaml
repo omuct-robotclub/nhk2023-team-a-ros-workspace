@@ -42,7 +42,7 @@
       antiwindup: true
       kd: 0.0208037834224033
       ki: 0.0
-      kp: 0.364066193848588
+      kp: 0.542486797881458
       max: 0.391962187196325
       min: -0.39078014372265
       use_velocity_for_d_term: false
