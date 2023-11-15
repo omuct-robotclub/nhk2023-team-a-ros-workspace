@@ -24,6 +24,7 @@ type
     lookahead_distance_outcourse: float
     in_course_distance: float
     out_course_distance: float
+    parking_course_distance: float
     line_fitting: SeqRansacConfig
     odom_lifespan: float
     angular_pid_gain: PidGain
@@ -53,6 +54,7 @@ type
   Course = enum
     InCourse
     OutCourse
+    ParkingCourse
   
   Odom = object
     stamp: RosTime
@@ -72,6 +74,7 @@ proc newWallTracer(): WallTracer =
     lookahead_distance_outcourse: 0.5,
     in_course_distance: 2.25,
     out_course_distance: 0.75,
+    parking_course_distance: 0.5,
     odom_lifespan: 1.0,
     line_fitting: SeqRansacConfig(
       inlierDistanceThreshold: 0.05,
@@ -215,6 +218,7 @@ proc getCarrotPoint(self; lines: openArray[Line]): Option[(Vector2f, Line)] =
     case self.targetCourse
     of InCourse: self.params.value.lookahead_distance_incourse
     of OutCourse: self.params.value.lookahead_distance_outcourse
+    of ParkingCourse: self.params.value.lookahead_distance_outcourse
   for i in 0..<100:
     lookaheadDist += 0.1
     for l in lines:
@@ -246,10 +250,12 @@ proc cmdSubLoop(self) {.async.} =
   while true:
     let msg = await self.cmdSub.recv()
 
-    self.turnEnabled = abs(msg.angular.x) > 0.5 and self.params.value.enable_turn
-    if msg.angular.x > 0.5:
+    self.turnEnabled = abs(msg.angular.x) > 0.01 and self.params.value.enable_turn
+    if msg.angular.x > 0.25:
       self.targetCourse = InCourse
     elif msg.angular.x < -0.5:
+      self.targetCourse = ParkingCourse
+    elif msg.angular.x < -0.25:
       self.targetCourse = OutCourse
 
     self.angleController.gain = self.params.value.angular_pid_gain
@@ -330,6 +336,7 @@ proc odomSubLoop(self) {.async.} =
         case self.targetCourse
         of InCourse: self.params.value.in_course_distance
         of OutCourse: self.params.value.out_course_distance
+        of ParkingCourse: self.params.value.parking_course_distance
       linesMoved = linesFiltered.mapIt(it.moveParallel(offsetDistance))
       linesIgnored = lines.filterIt(not self.filterLine(it))
       carrotPointAndLine = self.getCarrotPoint(linesMoved)
