@@ -28,6 +28,10 @@ type
     line_fitting: SeqRansacConfig
     odom_lifespan: float
     angular_pid_gain: PidGain
+  
+  Direction = enum
+    Forward
+    Backward
 
   WallTracer = ref object
     node: Node
@@ -48,6 +52,7 @@ type
     carrotPoint: Option[Vector2f]
     targetCourse: Course
     turnEnabled: bool
+    direction: Direction
 
     angleController: PidController
 
@@ -100,6 +105,7 @@ proc newWallTracer(): WallTracer =
   result.odomSub = result.node.createSubscription(Odometry, "odom", SensorDataQoS)
   result.targetCourse = InCourse
   result.angleController = initPidController(result.params.value.angular_pid_gain)
+  result.direction = Forward
 
 proc to2Point(line: Line): array[2, Point] =
   let c = vector2d(line.point.x, line.point.y)
@@ -224,7 +230,10 @@ proc getCarrotPoint(self; lines: openArray[Line]): Option[(Vector2f, Line)] =
     for l in lines:
       let res = l.intersectionToCircle(vector2f(0, 0), lookaheadDist)
       if res.isNone: continue
-      let points = res.get().filterIt(it.x > 0)
+      let points =
+        case self.direction
+        of Forward: res.get().filterIt(it.x > 0)
+        of Backward: res.get().filterIt(it.x < 0)
       if points.len == 0: continue
       for p in points:
         candidates.add (p, l)
@@ -258,13 +267,15 @@ proc cmdSubLoop(self) {.async.} =
     elif msg.angular.x < -0.25:
       self.targetCourse = OutCourse
 
+    self.direction = if msg.linear.x >= 0: Forward else: Backward
+
     self.angleController.gain = self.params.value.angular_pid_gain
 
     let enabled = msg.linear.z > 0.5
 
     if enabled:
       if self.carrotPoint.isSome:
-        let speed = vector2f(msg.linear.x, msg.linear.y).length()
+        let speed = abs(msg.linear.x)
         let p = self.carrotPoint.get()
         let line = self.targetLine.get()
         let dir1 = line.direction
@@ -275,7 +286,10 @@ proc cmdSubLoop(self) {.async.} =
           else:
             dir2
         let pDir = p.normalized()
-        let tgtAngle = arctan2(dir.y, dir.x)
+        let tgtAngle = 
+          case self.direction
+          of Forward: arctan2(dir.y, dir.x)
+          of Backward: arctan2(-dir.y, -dir.x)
         var cmd = Twist()
         self.angleController.target = tgtAngle
         self.angleController.updateWithVel(0.0, self.latestOdom.twist.twist.angular.z, 0.1)
