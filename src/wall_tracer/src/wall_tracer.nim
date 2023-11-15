@@ -219,28 +219,30 @@ proc moveParallel(line: Line, delta: float32): Line =
     Line.fromPointAndDir(p2, line.direction)
 
 proc getCarrotPoint(self; lines: openArray[Line]): Option[(Vector2f, Line)] =
+  if lines.len == 0: return none (Vector2f, Line)
+
   var candidates = newSeq[(Vector2f, Line)]()
-  var lookaheadDist =
+  let lookaheadDist =
     case self.targetCourse
     of InCourse: self.params.value.lookahead_distance_incourse
     of OutCourse: self.params.value.lookahead_distance_outcourse
     of ParkingCourse: self.params.value.lookahead_distance_outcourse
-  for i in 0..<100:
-    lookaheadDist += 0.1
-    for l in lines:
-      let res = l.intersectionToCircle(vector2f(0, 0), lookaheadDist)
-      if res.isNone: continue
-      let points =
-        case self.direction
-        of Forward: res.get().filterIt(it.x > 0)
-        of Backward: res.get().filterIt(it.x < 0)
-      if points.len == 0: continue
-      for p in points:
-        candidates.add (p, l)
 
-    if candidates.len > 0:
-      return some candidates.sortedByIt(arctan2(it[0].y, it[0].x))[^1]
-  none (Vector2f, Line)
+  for l in lines:
+    let res = l.intersectionToCircle(vector2f(0, 0), lookaheadDist)
+    if res.isNone: continue
+    let points =
+      case self.direction
+      of Forward: res.get().filterIt(it.x > 0)
+      of Backward: res.get().filterIt(it.x < 0)
+    if points.len == 0: continue
+    for p in points:
+      candidates.add (p, l)
+
+  if candidates.len > 0:
+    return some candidates.sortedByIt(arctan2(it[0].y, it[0].x))[^1]
+
+  return some lines.mapIt((vector2f(0, 0).getClosestPointTo(it), it)).sortedByIt(it[0].length2)[0]
 
 proc scanSubLoop(self) {.async.} =
   while true:
@@ -281,15 +283,12 @@ proc cmdSubLoop(self) {.async.} =
         let dir1 = line.direction
         let dir2 = -line.direction
         let dir = 
-          if (p - dir1).length2 < (p - dir2).length2:
+          if (dir1 - vector2f(1, 0)).length < (dir2 - vector2f(1, 0)).length:
             dir1
           else:
             dir2
         let pDir = p.normalized()
-        let tgtAngle = 
-          case self.direction
-          of Forward: arctan2(dir.y, dir.x)
-          of Backward: arctan2(-dir.y, -dir.x)
+        let tgtAngle = arctan2(dir.y, dir.x)
         var cmd = Twist()
         self.angleController.target = tgtAngle
         self.angleController.updateWithVel(0.0, self.latestOdom.twist.twist.angular.z, 0.1)
