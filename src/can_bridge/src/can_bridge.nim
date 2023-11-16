@@ -12,6 +12,7 @@ importInterface geometry_msgs/msg/[twist, twist_stamped, vector3, quaternion]
 importInterface nav_msgs/msg/odometry, Odometry as OdometryMsg
 importInterface std_msgs/msg/[int8 as int8_msg, float64 as float64_msg, bool as bool_msg], bool_msg.Bool as BoolMsg
 importInterface std_srvs/srv/trigger
+importInterface builtin_interfaces/msg/time as time_msgs, Time as TimeMsg
 importInterface robot_interface/msg/steer_unit_states
 
 func toDurationSec(f: float): Duration =
@@ -360,7 +361,7 @@ proc canReadLoop(self) {.async.} =
       # self.logger.info fb.pose, " ", self.prevPose
       var msg = OdometryMsg()
       msg.header.frameId = "odom"
-      msg.header.stamp = self.node.clock.now().toMsg()
+      msg.header.stamp = self.node.clock.now().to(TimeMsg)
       msg.childFrameId = "base_footprint"
       self.position.x += float(cast[int16](fb.pose.x - self.prevPose.x)) * 1e-3
       self.position.y += float(cast[int16](fb.pose.y - self.prevPose.y)) * 1e-3
