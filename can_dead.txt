@@ -1,0 +1,21 @@
+[ 1915.356804] gs_usb 1-1.1:1.0 can0: usb xmit fail 0
+[ 1915.358373] gs_usb 1-1.1:1.0 can0: usb xmit fail 1
+[ 1915.367666] gs_usb 1-1.1:1.0 can0: usb xmit fail 2
+[ 1915.371959] gs_usb 1-1.1:1.0 can0: usb xmit fail 3
+[ 1915.378191] gs_usb 1-1.1:1.0 can0: usb xmit fail 4
+[ 1915.380261] gs_usb 1-1.1:1.0 can0: usb xmit fail 5
+[ 1915.388417] gs_usb 1-1.1:1.0 can0: usb xmit fail 6
+[ 1915.398659] gs_usb 1-1.1:1.0 can0: usb xmit fail 7
+[ 1915.408938] gs_usb 1-1.1:1.0 can0: usb xmit fail 8
+[ 1915.411441] gs_usb 1-1.1:1.0 can0: usb xmit fail 9
+[ 1915.552957] usb 1-1-port1: disabled by hub (EMI?), re-enabling...
+[ 1915.553200] usb 1-1.1: USB disconnect, device number 41
+[ 1915.553279] gs_usb 1-1.1:1.0 can0: Couldn't shutdown device (err=-19)
+[ 1915.761629] usb 1-1.1: new full-speed USB device number 42 using xhci_hcd
+[ 1915.863758] usb 1-1.1: New USB device found, idVendor=1d50, idProduct=606f, bcdDevice= 0.00
+[ 1915.863763] usb 1-1.1: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[ 1915.863765] usb 1-1.1: Product: USB2CAN v1
+[ 1915.863766] usb 1-1.1: Manufacturer: InnoMaker
+[ 1915.863767] usb 1-1.1: SerialNumber: 003000385443571220393433
+[ 1915.869543] gs_usb 1-1.1:1.0: Configuring for 1 interfaces
+[ 1915.887638] IPv6: ADDRCONF(NETDEV_CHANGE): can0: link becomes ready
