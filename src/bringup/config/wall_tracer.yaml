@@ -15,8 +15,8 @@
       minDistanceBetweenSamples: 1.0
       minLineLength: 0.5
       stopTotalLineLength: 1.0
-    lookahead_distance_incourse: 0.25
-    lookahead_distance_outcourse: 0.25
+    lookahead_distance_incourse: 0.5
+    lookahead_distance_outcourse: 0.5
     odom_lifespan: 1.0
     out_course_distance: 0.75
     robot_size_x: 0.7
