@@ -7,7 +7,7 @@
       ki: 0.0
       kp: 0.847965738756292
       max: 0.152245850511699
-      min: -0.14515365059814
+      min: -0.21370449677718
       use_velocity_for_d_term: false
     arm_length:
       antiwindup: true
