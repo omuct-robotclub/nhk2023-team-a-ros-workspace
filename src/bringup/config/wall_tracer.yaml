@@ -8,6 +8,7 @@
       max: 5.0
       min: -5.0
       use_velocity_for_d_term: true
+    enable_turn: false
     in_course_distance: 2.25
     line_fitting:
       inlierDistanceThreshold: 0.05
@@ -19,6 +20,7 @@
     lookahead_distance_outcourse: 0.5
     odom_lifespan: 1.0
     out_course_distance: 0.75
+    parking_course_distance: 0.6
     robot_size_x: 0.7
     robot_size_y: 0.7
 
