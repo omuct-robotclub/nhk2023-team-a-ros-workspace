@@ -5,17 +5,17 @@
       antiwindup: true
       kd: 0.0392434988147994
       ki: 0.0
-      kp: 0.847965738756292
-      max: 0.152245850511699
+      kp: 0.796927491912397
+      max: 0.217130620982317
       min: -0.21370449677718
       use_velocity_for_d_term: false
     arm_length:
       antiwindup: true
       kd: 0.264775413713356
       ki: 0.0
-      kp: 10.3282521475635
-      max: 0.415602820843005
-      min: -0.42784018384269
+      kp: 12.2179548727863
+      max: 0.734037445995314
+      min: -0.62457993278746
       use_velocity_for_d_term: false
     can_id: 200
     can_interface: can0
