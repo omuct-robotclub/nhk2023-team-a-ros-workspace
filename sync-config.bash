@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
-scp ./configuration.nix robotclub-latitude:~/configuration.nix
-ssh robotclub-latitude 'sudo cp ~/configuration.nix /etc/nixos/configuration.nix'
-ssh robotclub-latitude 'sudo nixos-rebuild switch'
+TARGET="robotclub@robotclub-latitude"
+scp ./configuration.nix "$TARGET":~/configuration.nix
+ssh "$TARGET" 'sudo cp ~/configuration.nix /etc/nixos/configuration.nix'
+ssh "$TARGET" 'sudo nixos-rebuild switch'
