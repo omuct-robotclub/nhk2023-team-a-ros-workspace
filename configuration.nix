@@ -2,23 +2,33 @@
 # your system.  Help is available in the configuration.nix(5) man page
 # and in the NixOS manual (accessible by running ‘nixos-help’).
 
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 
 {
-  imports =
-    [ # Include the results of the hardware scan.
-      ./hardware-configuration.nix
-    ];
+  imports = [
+    # Include the results of the hardware scan.
+    ./hardware-configuration.nix
+  ];
 
   boot.kernelPackages = pkgs.linuxPackages_latest;
 
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
-  nix.settings.trusted-users = [ "root" "robotclub" ];
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
+  nix.settings.trusted-users = [
+    "root"
+    "robotclub"
+  ];
   nix.extraOptions = ''
     keep-outputs = true
     keep-derivations = true
   '';
-
 
   # Bootloader.
   boot.loader.systemd-boot.enable = true;
@@ -111,7 +121,11 @@
   users.users.robotclub = {
     isNormalUser = true;
     description = "robotclub";
-    extraGroups = [ "networkmanager" "wheel" "dialout" ];
+    extraGroups = [
+      "networkmanager"
+      "wheel"
+      "dialout"
+    ];
     openssh.authorizedKeys.keys = [
       "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQD2paFy/h8Z4geIE1PueOW5MZNlYCm8bCSQybBMIA/2i734BnqE0uG4KkpuZ98PEIplHHBeUtkrD4WKKx7pqqpO+iMNR/q5ccMaom47kifMqSLylNNxxX4GTgKg6vMPY2CPLULzoWpxOd+zWWjN7ZHaAQ6iUa/c4EMni5SAVp7fowLMjvuglmdTjJfe8DSodseUzQ+lpDWpCfwgQg/euNMM1AiSoD65+Cu1+mX9Lx5tzKTC8SCR8m04BVxf0xlsVoYzYRg8hpoorBtrI9lkR9okgVH7kDGU3O8M9e5v+jIYHMxrmsCLr4xbPN7VoGo4e2YaPV2rinRyNa3JR8DHbKuBZjwLAnGftFeI7GhxJnM7s0Cst2mBOM3fl9qptNjFIKX0b5Da5wNCJm7gb29ov+CX3oibGWf+T4R4nHSfqaMG7zaIQYuvPV2gz/WhBfKW3shUhM7QzZOTdOfdtjyW5GMSJIX4nujPxyxElgULi5bDMJQZ9qdfaMCt1tS5YEBQdF0= aoi@gpd-win-max"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKi2yXcURGqBRlImY0p2yKFa1ME2WlILyVhv2ZVHDS7/ teru@11"
@@ -119,7 +133,7 @@
     ];
     packages = with pkgs; [
       firefox
-    #  thunderbird
+      #  thunderbird
     ];
   };
 
@@ -146,8 +160,8 @@
     acpi
     bottom
     picocom
-  #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
-  #  wget
+    #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
+    #  wget
   ];
 
   programs.nix-ld.enable = true;
@@ -183,8 +197,8 @@
       users = [ "robotclub" ];
       commands = [
         {
-          command = "ALL" ;
-          options= [ "NOPASSWD" ]; # "SETENV" # Adding the following could be a good idea
+          command = "ALL";
+          options = [ "NOPASSWD" ]; # "SETENV" # Adding the following could be a good idea
         }
       ];
     }
@@ -213,9 +227,8 @@
   };
 
   environment.sessionVariables = {
-#    QT_IM_MODULE = "qtvirtualkeyboard";
+    #    QT_IM_MODULE = "qtvirtualkeyboard";
   };
-
 
   # Open ports in the firewall.
   # networking.firewall.allowedTCPPorts = [ ... ];
